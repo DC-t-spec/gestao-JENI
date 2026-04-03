@@ -50,6 +50,20 @@ export async function startRouter() {
     await renderRoute(route);
   }
 
+export async function renderRoute(route) {
+  console.log('ROUTE:', route);
+  console.log('USER:', state.user);
+
+  if (route === 'configuracao' && !canAccessAdmin()) {
+    console.log('BLOQUEADO - não é admin');
+    route = 'dashboard';
+    state.route = route;
+  }
+
+  const renderer = routes[route] || routes.dashboard;
+  await renderer();
+}
+  
   window.addEventListener('hashchange', handleRoute);
   await handleRoute();
 }
