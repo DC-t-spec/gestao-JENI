@@ -6,19 +6,37 @@ import { updateUserUI } from './ui/ui.js';
 import { navTo, renderRoute } from './router.js';
 import { dom } from './ui/dom.js';
 
-document.querySelector('#show-login-btn').addEventListener('click', () => {
-  document.querySelector('#login-form').hidden = false;
-  document.querySelector('#register-form').hidden = true;
-});
+const showLoginBtn = document.querySelector('#show-login-btn');
+const showRegisterBtn = document.querySelector('#show-register-btn');
+const loginForm = document.querySelector('#login-form');
+const registerForm = document.querySelector('#register-form');
+const logoutBtn = document.querySelector('#logout-btn');
 
-document.querySelector('#show-register-btn').addEventListener('click', () => {
-  document.querySelector('#login-form').hidden = true;
-  document.querySelector('#register-form').hidden = false;
-});
+if (showLoginBtn && loginForm && registerForm) {
+  showLoginBtn.addEventListener('click', () => {
+    loginForm.hidden = false;
+    registerForm.hidden = true;
+  });
+}
 
-document.querySelector('#login-form').addEventListener('submit', handleLogin);
-document.querySelector('#register-form').addEventListener('submit', handleRegister);
-document.querySelector('#logout-btn').addEventListener('click', logout);
+if (showRegisterBtn && loginForm && registerForm) {
+  showRegisterBtn.addEventListener('click', () => {
+    loginForm.hidden = true;
+    registerForm.hidden = false;
+  });
+}
+
+if (loginForm) {
+  loginForm.addEventListener('submit', handleLogin);
+}
+
+if (registerForm) {
+  registerForm.addEventListener('submit', handleRegister);
+}
+
+if (logoutBtn) {
+  logoutBtn.addEventListener('click', logout);
+}
 
 document.querySelectorAll('.nav-link').forEach((link) => {
   link.addEventListener('click', () => navTo(link.dataset.route));
