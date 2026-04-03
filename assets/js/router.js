@@ -20,9 +20,12 @@ const routes = {
 
 export function navTo(route) {
   state.route = route;
+
   document.querySelectorAll('.nav-link').forEach((link) => {
     link.classList.toggle('active', link.dataset.route === route);
   });
+
+  window.location.hash = `#/${route}`;
   renderRoute(route);
 }
 
@@ -31,6 +34,22 @@ export async function renderRoute(route) {
     route = 'dashboard';
     state.route = route;
   }
+
   const renderer = routes[route] || routes.dashboard;
   await renderer();
+
+  document.querySelectorAll('.nav-link').forEach((link) => {
+    link.classList.toggle('active', link.dataset.route === route);
+  });
+}
+
+export async function startRouter() {
+  async function handleRoute() {
+    const hash = window.location.hash || '#/dashboard';
+    const route = hash.replace('#/', '') || 'dashboard';
+    await renderRoute(route);
+  }
+
+  window.addEventListener('hashchange', handleRoute);
+  await handleRoute();
 }
