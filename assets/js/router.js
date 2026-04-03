@@ -49,7 +49,7 @@ export async function startRouter() {
     const route = hash.replace('#/', '') || 'dashboard';
     await renderRoute(route);
   }
-  
+
   window.addEventListener('hashchange', handleRoute);
   await handleRoute();
 }
