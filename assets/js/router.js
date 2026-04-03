@@ -1,23 +1,36 @@
-const routes = {};
+import { state } from './core/state.js';
+import { canAccessAdmin } from './core/utils.js';
+import { renderDashboard } from './pages/dashboard.js';
+import { renderPurchases } from './pages/compras.js';
+import { renderBirdEntries } from './pages/entradas.js';
+import { renderSales } from './pages/vendas.js';
+import { renderMortality } from './pages/mortalidade.js';
+import { renderReports } from './pages/relatorios.js';
+import { renderSettings } from './pages/configuracao.js';
 
-export function registerRoute(path, handler) {
-  routes[path] = handler;
+const routes = {
+  dashboard: renderDashboard,
+  compras: renderPurchases,
+  entradas: renderBirdEntries,
+  vendas: renderSales,
+  mortalidade: renderMortality,
+  relatorios: renderReports,
+  configuracao: renderSettings,
+};
+
+export function navTo(route) {
+  state.route = route;
+  document.querySelectorAll('.nav-link').forEach((link) => {
+    link.classList.toggle('active', link.dataset.route === route);
+  });
+  renderRoute(route);
 }
 
-export async function startRouter() {
-  async function renderRoute() {
-    const hash = window.location.hash || '#/dashboard';
-    const path = hash.replace('#', '');
-    const handler = routes[path];
-
-    if (!handler) {
-      document.querySelector('#app').innerHTML = '<div class="card"><h2>Página não encontrada</h2></div>';
-      return;
-    }
-
-    await handler();
+export async function renderRoute(route) {
+  if (route === 'configuracao' && !canAccessAdmin()) {
+    route = 'dashboard';
+    state.route = route;
   }
-
-  window.addEventListener('hashchange', renderRoute);
-  await renderRoute();
+  const renderer = routes[route] || routes.dashboard;
+  await renderer();
 }
