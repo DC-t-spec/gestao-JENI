@@ -1,79 +1,145 @@
 import { supabase } from './supabase-client.js';
-import { state } from './state.js';
-import { dom } from '../ui/dom.js';
-import { showFeedback, updateUserUI } from '../ui/ui.js';
-import { fetchProfile, fetchBatches } from './data.js';
-import { renderRoute } from '../router.js';
 
-export async function initSession() {
-  const { data } = await supabase.auth.getSession();
-  const session = data.session;
+const authView = document.querySelector('#auth-view');
+const appView = document.querySelector('#app-view');
+const loginForm = document.querySelector('#login-form');
+const registerForm = document.querySelector('#register-form');
+const showLoginBtn = document.querySelector('#show-login-btn');
+const showRegisterBtn = document.querySelector('#show-register-btn');
+const authFeedback = document.querySelector('#auth-feedback');
+const userInfo = document.querySelector('#user-info');
 
-  if (!session?.user) {
-    dom.authView.hidden = false;
-    dom.appView.hidden = true;
-    return;
-  }
+function showAuthFeedback(message, type = 'error') {
+  if (!authFeedback) return;
+  authFeedback.innerHTML = `<div class="feedback ${type}">${message}</div>`;
+}
 
-  state.currentUser = session.user;
-  state.profile = await fetchProfile(session.user.id);
-  await fetchBatches();
-  updateUserUI();
-
-  dom.authView.hidden = true;
-  dom.appView.hidden = false;
-  await renderRoute(state.route);
+function clearAuthFeedback() {
+  if (!authFeedback) return;
+  authFeedback.innerHTML = '';
 }
 
 export async function handleLogin(event) {
   event.preventDefault();
-  const form = event.currentTarget;
-  const formData = new FormData(form);
+  clearAuthFeedback();
 
-  const { error } = await supabase.auth.signInWithPassword({
-    email: String(formData.get('email')).trim(),
-    password: String(formData.get('password')),
-  });
+  const formData = new FormData(loginForm);
+  const email = String(formData.get('email') || '').trim();
+  const password = String(formData.get('password') || '');
 
-  if (error) {
-    showFeedback(dom.authFeedback, error.message, 'error');
+  if (!email || !password) {
+    showAuthFeedback('Preencha o email e a senha.', 'error');
     return;
   }
 
-  form.reset();
-  showFeedback(dom.authFeedback, 'Login efetuado com sucesso.', 'success');
-  await initSession();
+  const submitBtn = loginForm.querySelector('button[type="submit"]');
+  if (submitBtn) submitBtn.disabled = true;
+
+  try {
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
+    if (error) {
+      showAuthFeedback(error.message, 'error');
+      return;
+    }
+
+    if (userInfo) {
+      userInfo.textContent = data.user?.email || '';
+    }
+
+    if (authView) authView.hidden = true;
+    if (appView) appView.hidden = false;
+
+    showAuthFeedback('Login efetuado com sucesso.', 'success');
+  } catch (err) {
+    console.error('Erro no login:', err);
+    showAuthFeedback('Erro inesperado ao entrar.', 'error');
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
 }
 
 export async function handleRegister(event) {
   event.preventDefault();
-  const form = event.currentTarget;
-  const formData = new FormData(form);
+  clearAuthFeedback();
 
-  const { error } = await supabase.auth.signUp({
-    email: String(formData.get('email')).trim(),
-    password: String(formData.get('password')),
-    options: {
-      data: {
-        full_name: String(formData.get('full_name')).trim(),
-      },
-    },
-  });
+  const formData = new FormData(registerForm);
+  const email = String(formData.get('email') || '').trim();
+  const password = String(formData.get('password') || '');
 
-  if (error) {
-    showFeedback(dom.authFeedback, error.message, 'error');
+  if (!email || !password) {
+    showAuthFeedback('Preencha o email e a senha.', 'error');
     return;
   }
 
-  form.reset();
-  showFeedback(dom.authFeedback, 'Conta criada. Verifique o email se a confirmação estiver ativa.', 'success');
+  const submitBtn = registerForm.querySelector('button[type="submit"]');
+  if (submitBtn) submitBtn.disabled = true;
+
+  try {
+    const { error } = await supabase.auth.signUp({
+      email,
+      password,
+    });
+
+    if (error) {
+      showAuthFeedback(error.message, 'error');
+      return;
+    }
+
+    showAuthFeedback('Conta criada com sucesso. Agora pode entrar.', 'success');
+
+    registerForm.reset();
+    registerForm.hidden = true;
+    loginForm.hidden = false;
+  } catch (err) {
+    console.error('Erro no registo:', err);
+    showAuthFeedback('Erro inesperado ao criar conta.', 'error');
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
 }
 
-export async function logout() {
-  await supabase.auth.signOut();
-  state.currentUser = null;
-  state.profile = null;
-  dom.authView.hidden = false;
-  dom.appView.hidden = true;
-  showFeedback(dom.authFeedback, 'Sessão terminada com sucesso.', 'success');
+export async function initAuth() {
+  if (showLoginBtn && loginForm && registerForm) {
+    showLoginBtn.addEventListener('click', () => {
+      clearAuthFeedback();
+      loginForm.hidden = false;
+      registerForm.hidden = true;
+    });
+  }
+
+  if (showRegisterBtn && loginForm && registerForm) {
+    showRegisterBtn.addEventListener('click', () => {
+      clearAuthFeedback();
+      loginForm.hidden = true;
+      registerForm.hidden = false;
+    });
+  }
+
+  if (loginForm) {
+    loginForm.addEventListener('submit', handleLogin);
+  }
+
+  if (registerForm) {
+    registerForm.addEventListener('submit', handleRegister);
+  }
+
+  const { data, error } = await supabase.auth.getSession();
+
+  if (error) {
+    console.error('Erro ao verificar sessão:', error);
+    return;
+  }
+
+  if (data.session?.user) {
+    if (userInfo) userInfo.textContent = data.session.user.email || '';
+    if (authView) authView.hidden = true;
+    if (appView) appView.hidden = false;
+  } else {
+    if (authView) authView.hidden = false;
+    if (appView) appView.hidden = true;
+  }
 }
