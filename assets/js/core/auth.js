@@ -50,10 +50,12 @@ export async function handleLogin(event) {
       userInfo.textContent = data.user?.email || '';
     }
 
-    if (authView) authView.hidden = true;
-    if (appView) appView.hidden = false;
+if (authView) authView.hidden = true;
+if (appView) appView.hidden = false;
 
-    showAuthFeedback('Login efetuado com sucesso.', 'success');
+window.location.hash = '#/dashboard';
+
+showAuthFeedback('Login efetuado com sucesso.', 'success');
   } catch (err) {
     console.error('Erro no login:', err);
     showAuthFeedback('Erro inesperado ao entrar.', 'error');
