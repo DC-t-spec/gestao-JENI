@@ -1,1 +1,45 @@
-a
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Sistema de Controlo de Frangos</title>
+  <link rel="stylesheet" href="./assets/css/tokens.css" />
+  <link rel="stylesheet" href="./assets/css/base.css" />
+  <link rel="stylesheet" href="./assets/css/layout.css" />
+  <link rel="stylesheet" href="./assets/css/components.css" />
+  <link rel="stylesheet" href="./assets/css/modules.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar">
+      <div class="brand">JENI FRANGOS</div>
+      <nav class="sidebar-nav">
+        <a href="#/dashboard">Dashboard</a>
+        <a href="#/compras">Compras</a>
+        <a href="#/vendas">Vendas</a>
+        <a href="#/mortalidade">Mortalidade</a>
+        <a href="#/relatorios">Relatórios</a>
+        <a href="#/configuracao">Configuração</a>
+      </nav>
+    </aside>
+
+    <main class="main-content">
+      <header class="topbar">
+        <div>
+          <h1 id="page-title">Dashboard</h1>
+          <p id="page-subtitle">Controlo da criação de frangos</p>
+        </div>
+        <div class="topbar-actions">
+          <span id="user-info"></span>
+          <button id="logout-btn" class="btn btn-secondary">Sair</button>
+        </div>
+      </header>
+
+      <section id="app"></section>
+    </main>
+  </div>
+
+  <script type="module" src="./assets/js/app.js"></script>
+</body>
+</html>
