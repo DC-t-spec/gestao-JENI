@@ -1,29 +1,71 @@
-.brand {
-  padding: 12px 14px;
-  border-radius: 16px;
-  background: rgba(255,255,255,0.06);
+.btn {
+  border: none;
+  border-radius: 14px;
+  padding: 12px 16px;
+  cursor: pointer;
+  transition: 0.2s ease;
 }
-.brand strong { display: block; font-size: 1.1rem; }
-.brand span { color: rgba(226,232,240,0.78); font-size: 0.9rem; }
-.nav-links { display: grid; gap: 8px; }
-.nav-link {
+
+.btn:hover {
+  transform: translateY(-1px);
+}
+
+.btn-primary {
+  background: var(--primary);
+  color: #fff;
+}
+
+.btn-primary:hover {
+  background: var(--primary-dark);
+}
+
+.btn-secondary {
+  background: #e2e8f0;
+  color: #0f172a;
+}
+
+.form-grid {
+  display: grid;
+  gap: 14px;
+}
+
+.form-grid input,
+.form-grid textarea,
+.form-grid select {
+  width: 100%;
+  padding: 13px 14px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--text);
+}
+
+.auth-switch {
+  display: flex;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.feedback {
+  margin-top: 16px;
   padding: 12px 14px;
   border-radius: 14px;
-  color: var(--sidebar-text);
-  cursor: pointer;
   border: 1px solid transparent;
+  font-size: 0.95rem;
 }
-.nav-link:hover, .nav-link.active {
-  background: rgba(255,255,255,0.08);
-  border-color: rgba(255,255,255,0.08);
+
+.feedback.success {
+  background: #ecfdf5;
+  color: var(--success);
+  border-color: #bbf7d0;
 }
-.sidebar-footer {
-  margin-top: auto;
-  display: grid;
-  gap: 10px;
-  font-size: 0.92rem;
-  color: rgba(226,232,240,0.8);
+
+.feedback.error {
+  background: #fef2f2;
+  color: var(--danger);
+  border-color: #fecaca;
 }
+
 .card {
   background: var(--surface);
   border: 1px solid var(--border);
@@ -31,94 +73,16 @@
   box-shadow: var(--shadow);
   padding: 20px;
 }
-.btn-row, .toolbar {
-  display: flex;
-  gap: 10px;
-  flex-wrap: wrap;
-  align-items: center;
-}
-.btn {
-  border: none;
-  border-radius: 14px;
-  padding: 12px 16px;
-  cursor: pointer;
-  transition: .2s ease;
-}
-.btn:hover { transform: translateY(-1px); }
-.btn-primary { background: var(--primary); color: white; }
-.btn-primary:hover { background: var(--primary-2); }
-.btn-secondary { background: #e2e8f0; color: #0f172a; }
-.btn-danger { background: #fee2e2; color: #991b1b; }
-.pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 999px;
-  background: var(--surface-2);
-  border: 1px solid var(--border);
-  color: var(--muted);
-  font-size: 0.92rem;
-}
-.field { display: grid; gap: 7px; }
-.field label { font-size: 0.92rem; color: var(--muted); }
-.field input, .field select, .field textarea {
-  width: 100%;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: #fff;
-  color: var(--text);
-}
-.field textarea { min-height: 110px; resize: vertical; }
-.feedback {
-  margin-top: 14px;
+
+.nav-link {
   padding: 12px 14px;
   border-radius: 14px;
-  font-size: 0.95rem;
+  color: var(--sidebar-text);
   border: 1px solid transparent;
 }
-.feedback.success { background: #ecfdf5; color: var(--success); border-color: #bbf7d0; }
-.feedback.error { background: #fef2f2; color: var(--danger); border-color: #fecaca; }
-.feedback.warning { background: #fff7ed; color: var(--warning); border-color: #fed7aa; }
-.preview-box {
-  background: var(--surface-2);
-  border: 1px dashed var(--border);
-  border-radius: 16px;
-  padding: 16px;
-}
-.badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 6px 10px;
-  border-radius: 999px;
-  font-size: 0.85rem;
-  border: 1px solid var(--border);
-  background: var(--surface-2);
-}
-.table-wrap {
-  width: 100%;
-  overflow: auto;
-  border: 1px solid var(--border);
-  border-radius: 18px;
-}
-table {
-  width: 100%;
-  border-collapse: collapse;
-  min-width: 820px;
-  background: white;
-}
-th, td {
-  padding: 12px 14px;
-  text-align: left;
-  border-bottom: 1px solid var(--border);
-  vertical-align: top;
-}
-th {
-  background: #f8fafc;
-  color: var(--muted);
-  font-size: 0.92rem;
-  position: sticky;
-  top: 0;
-  z-index: 1;
+
+.nav-link:hover,
+.nav-link.active {
+  background: rgba(255,255,255,0.08);
+  border-color: rgba(255,255,255,0.08);
 }
