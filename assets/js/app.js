@@ -1,6 +1,6 @@
-import { initAuth } from './auth.js';
+import { initAuth } from './core/auth.js';
 import { startRouter } from './router.js';
-import { supabase } from './supabase-client.js';
+import { supabase } from './core/supabase-client.js';
 
 const logoutBtn = document.querySelector('#logout-btn');
 
