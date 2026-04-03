@@ -1,15 +1,17 @@
 :root {
-  --bg: #f7f8fa;
+  --bg: #f5f7fb;
   --surface: #ffffff;
-  --text: #1f2937;
-  --muted: #6b7280;
-  --border: #e5e7eb;
+  --surface-2: #f8fafc;
+  --text: #0f172a;
+  --muted: #64748b;
+  --border: #e2e8f0;
   --primary: #0f766e;
-  --primary-dark: #115e59;
+  --primary-2: #115e59;
   --danger: #b91c1c;
+  --warning: #b45309;
   --success: #15803d;
   --sidebar: #0f172a;
-  --sidebar-text: #e5e7eb;
+  --sidebar-text: #e2e8f0;
   --radius: 18px;
-  --shadow: 0 10px 30px rgba(0,0,0,0.08);
+  --shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
 }
