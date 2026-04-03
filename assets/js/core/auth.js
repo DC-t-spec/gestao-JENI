@@ -1,4 +1,5 @@
 import { supabase } from './supabase-client.js';
+import { state } from './state.js';
 
 const authView = document.querySelector('#auth-view');
 const appView = document.querySelector('#app-view');
@@ -17,6 +18,36 @@ function showAuthFeedback(message, type = 'error') {
 function clearAuthFeedback() {
   if (!authFeedback) return;
   authFeedback.innerHTML = '';
+}
+
+async function loadUserProfile(user) {
+  if (!user) {
+    state.currentUser = null;
+    state.profile = null;
+    return null;
+  }
+
+  state.currentUser = user;
+
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('id', user.id)
+    .single();
+
+  if (error) {
+    console.error('Erro ao carregar perfil:', error);
+    state.profile = null;
+    return null;
+  }
+
+  state.profile = data;
+
+  if (userInfo) {
+    userInfo.textContent = `${data.email} · ${data.role}`;
+  }
+
+  return data;
 }
 
 export async function handleLogin(event) {
@@ -46,16 +77,13 @@ export async function handleLogin(event) {
       return;
     }
 
-    if (userInfo) {
-      userInfo.textContent = data.user?.email || '';
-    }
+    await loadUserProfile(data.user);
 
-if (authView) authView.hidden = true;
-if (appView) appView.hidden = false;
+    if (authView) authView.hidden = true;
+    if (appView) appView.hidden = false;
 
-window.location.hash = '#/dashboard';
-
-showAuthFeedback('Login efetuado com sucesso.', 'success');
+    window.location.hash = '#/dashboard';
+    showAuthFeedback('Login efetuado com sucesso.', 'success');
   } catch (err) {
     console.error('Erro no login:', err);
     showAuthFeedback('Erro inesperado ao entrar.', 'error');
@@ -137,10 +165,13 @@ export async function initAuth() {
   }
 
   if (data.session?.user) {
-    if (userInfo) userInfo.textContent = data.session.user.email || '';
+    await loadUserProfile(data.session.user);
     if (authView) authView.hidden = true;
     if (appView) appView.hidden = false;
   } else {
+    state.currentUser = null;
+    state.profile = null;
+
     if (authView) authView.hidden = false;
     if (appView) appView.hidden = true;
   }
