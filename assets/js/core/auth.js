@@ -47,6 +47,9 @@ async function loadUserProfile(user) {
     userInfo.textContent = `${data.email} · ${data.role}`;
   }
 
+  console.log('AUTH currentUser:', state.currentUser);
+  console.log('AUTH profile:', state.profile);
+
   return data;
 }
 
@@ -166,6 +169,7 @@ export async function initAuth() {
 
   if (data.session?.user) {
     await loadUserProfile(data.session.user);
+
     if (authView) authView.hidden = true;
     if (appView) appView.hidden = false;
   } else {
