@@ -3,17 +3,58 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Sistema de Controlo de Frangos</title>
+  <title>JENI FRANGOS</title>
+
   <link rel="stylesheet" href="./assets/css/tokens.css" />
   <link rel="stylesheet" href="./assets/css/base.css" />
   <link rel="stylesheet" href="./assets/css/layout.css" />
   <link rel="stylesheet" href="./assets/css/components.css" />
   <link rel="stylesheet" href="./assets/css/modules.css" />
 </head>
+
 <body>
-  <div class="app-shell">
+
+  <!-- ================= AUTH SCREEN ================= -->
+  <div id="auth-view" class="auth-container">
+
+    <div class="auth-box">
+
+      <h1>JENI FRANGOS</h1>
+      <p>Sistema de controlo de produção</p>
+
+      <!-- LOGIN -->
+      <form id="login-form" class="form-grid">
+        <input type="email" name="email" placeholder="Email" required />
+        <input type="password" name="password" placeholder="Senha" required />
+        <button type="submit" class="btn btn-primary">Entrar</button>
+      </form>
+
+      <!-- REGISTO -->
+      <form id="register-form" class="form-grid" hidden>
+        <input type="email" name="email" placeholder="Email" required />
+        <input type="password" name="password" placeholder="Senha" required />
+        <button type="submit" class="btn btn-primary">Criar conta</button>
+      </form>
+
+      <!-- SWITCH -->
+      <div class="auth-switch">
+        <button id="show-login-btn" class="btn btn-secondary">Login</button>
+        <button id="show-register-btn" class="btn btn-secondary">Criar conta</button>
+      </div>
+
+      <div id="auth-feedback"></div>
+
+    </div>
+
+  </div>
+
+  <!-- ================= APP ================= -->
+  <div id="app-view" class="app-shell" hidden>
+
+    <!-- SIDEBAR -->
     <aside class="sidebar">
       <div class="brand">JENI FRANGOS</div>
+
       <nav class="sidebar-nav">
         <a href="#/dashboard">Dashboard</a>
         <a href="#/compras">Compras</a>
@@ -24,22 +65,29 @@
       </nav>
     </aside>
 
+    <!-- MAIN -->
     <main class="main-content">
+
       <header class="topbar">
         <div>
           <h1 id="page-title">Dashboard</h1>
           <p id="page-subtitle">Controlo da criação de frangos</p>
         </div>
+
         <div class="topbar-actions">
           <span id="user-info"></span>
           <button id="logout-btn" class="btn btn-secondary">Sair</button>
         </div>
       </header>
 
-      <section id="app"></section>
+      <section id="page-content"></section>
+
     </main>
+
   </div>
 
+  <!-- APP -->
   <script type="module" src="./assets/js/app.js"></script>
+
 </body>
 </html>
