@@ -3,6 +3,13 @@ import { batchOptions, formatMoney, getCurrentUserId } from '../core/utils.js';
 import { setPageHeader, showFeedback } from '../ui/ui.js';
 import { dom } from '../ui/dom.js';
 
+import {
+  getRecentSales,
+  getSaleById,
+  getSalePayments,
+  createSalePayment,
+} from '../core/state.js';
+
 export async function renderSales() {
   setPageHeader('Vendas', 'Registo de vendas com controlo de pagamento');
 
