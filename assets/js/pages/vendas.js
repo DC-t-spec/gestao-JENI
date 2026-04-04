@@ -10,6 +10,25 @@ import {
   createSalePayment,
 } from '../core/state.js';
 
+
+function getPaymentStatusLabel(status) {
+  switch (status) {
+    case 'paid':
+      return 'Pago';
+    case 'partial':
+      return 'Parcial';
+    case 'pending':
+    default:
+      return 'Pendente';
+  }
+}
+
+function getPaymentStatusBadge(status) {
+  const label = getPaymentStatusLabel(status);
+  const safeStatus = status || 'pending';
+  return `<span class="badge badge--${safeStatus}">${label}</span>`;
+}
+
 export async function renderSales() {
   setPageHeader('Vendas', 'Registo de vendas com controlo de pagamento');
 
@@ -125,30 +144,43 @@ export async function renderSales() {
         <h3>Últimas vendas</h3>
         <div class="table-wrap">
           <table>
-            <thead>
-              <tr>
-                <th>Data</th>
-                <th>Cliente</th>
-                <th>Qtd</th>
-                <th>Total</th>
-                <th>Pago</th>
-                <th>Dívida</th>
-                <th>Estado</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${(rows || []).map((row) => `
-                <tr>
-                  <td>${row.sale_date || ''}</td>
-                  <td>${row.customer_name || ''}</td>
-                  <td>${row.quantity || ''}</td>
-                  <td>${formatMoney(row.total_amount || 0)}</td>
-                  <td>${formatMoney(row.amount_paid || 0)}</td>
-                  <td>${formatMoney(row.amount_due || 0)}</td>
-                  <td>${row.payment_status || ''}</td>
-                </tr>
-              `).join('') || '<tr><td colspan="7">Sem vendas registadas.</td></tr>'}
-            </tbody>
+          <thead>
+  <tr>
+    <th>Data</th>
+    <th>Cliente</th>
+    <th>Qtd</th>
+    <th>Total</th>
+    <th>Pago</th>
+    <th>Dívida</th>
+    <th>Estado</th>
+    <th>Ações</th>
+  </tr>
+</thead>
+<tbody>
+  ${(rows || []).map((row) => `
+    <tr>
+      <td>${row.sale_date || ''}</td>
+      <td>${row.customer_name || ''}</td>
+      <td>${row.quantity || ''}</td>
+      <td>${formatMoney(row.total_amount || 0)}</td>
+      <td>${formatMoney(row.amount_paid || 0)}</td>
+      <td>${formatMoney(row.amount_due || 0)}</td>
+      <td>${getPaymentStatusBadge(row.payment_status)}</td>
+      <td>
+        ${Number(row.amount_due || 0) > 0 ? `
+          <button
+            type="button"
+            class="btn btn-secondary btn-sm"
+            data-action="register-payment"
+            data-sale-id="${row.id}"
+          >
+            Registar pagamento
+          </button>
+        ` : '<span class="muted">Sem ação</span>'}
+      </td>
+    </tr>
+  `).join('') || '<tr><td colspan="8">Sem vendas registadas.</td></tr>'}
+</tbody>
           </table>
         </div>
       </div>
@@ -204,6 +236,19 @@ export async function renderSales() {
   form.addEventListener('change', updateSalesPreview);
   updateSalesPreview();
 
+  document.querySelectorAll('[data-action="register-payment"]').forEach((button) => {
+  button.addEventListener('click', async () => {
+    const saleId = button.dataset.saleId;
+
+    try {
+      await openRegisterPaymentModal(saleId);
+    } catch (error) {
+      console.error(error);
+      alert(error.message || 'Erro ao abrir pagamento.');
+    }
+  });
+});
+
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
 
@@ -218,19 +263,28 @@ export async function renderSales() {
     const vatAmount = applyVat ? Number(((subtotal * vatRate) / 100).toFixed(2)) : 0;
     const totalAmount = Number((subtotal + vatAmount).toFixed(2));
 
-    const paymentStatus = String(fd.get('payment_status'));
-    let amountPaid = Number(fd.get('amount_paid') || 0);
+const paymentStatus = String(fd.get('payment_status'));
+let amountPaid = Number(fd.get('amount_paid') || 0);
 
-    if (paymentStatus === 'paid') {
-      amountPaid = totalAmount;
-    }
+if (paymentStatus === 'paid') {
+  amountPaid = totalAmount;
+} else if (paymentStatus === 'pending') {
+  amountPaid = 0;
+} else {
+  amountPaid = Math.min(Math.max(amountPaid, 0), totalAmount);
+}
 
-    if (paymentStatus === 'pending') {
-      amountPaid = 0;
-    }
+const amountDue = Number(Math.max(totalAmount - amountPaid, 0).toFixed(2));
 
-    const amountDue = Number(Math.max(totalAmount - amountPaid, 0).toFixed(2));
+let normalizedPaymentStatus = paymentStatus;
 
+if (amountDue <= 0) {
+  normalizedPaymentStatus = 'paid';
+} else if (amountPaid > 0) {
+  normalizedPaymentStatus = 'partial';
+} else {
+  normalizedPaymentStatus = 'pending';
+}
     const payload = {
       sale_date: fd.get('sale_date'),
       batch_id: fd.get('batch_id') || null,
@@ -241,7 +295,7 @@ export async function renderSales() {
       apply_vat: applyVat,
       vat_rate: vatRate,
       payment_method: fd.get('payment_method') || null,
-      payment_status: paymentStatus,
+     payment_status: normalizedPaymentStatus,
       amount_paid: amountPaid,
       amount_due: amountDue,
       due_date: fd.get('due_date') || null,
@@ -249,9 +303,9 @@ export async function renderSales() {
       notes: String(fd.get('notes') || '').trim() || null,
       created_by: getCurrentUserId(),
       updated_by: getCurrentUserId(),
-      subtotal_amount: 0,
-      vat_amount: 0,
-      total_amount: 0,
+     subtotal_amount: subtotal,
+vat_amount: vatAmount,
+total_amount: totalAmount,
     };
 
     const { error } = await supabase.from('sales').insert(payload);
@@ -265,4 +319,182 @@ export async function renderSales() {
     showFeedback(feedback, 'Venda registada com sucesso.', 'success');
     await renderSales();
   });
+}
+
+async function openRegisterPaymentModal(saleId) {
+  const sale = await getSaleById(saleId);
+
+  if (!sale) {
+    throw new Error('Venda não encontrada.');
+  }
+
+  const existingModal = document.querySelector('#sale-payment-modal');
+  if (existingModal) existingModal.remove();
+
+  const today = new Date().toISOString().split('T')[0];
+
+  const modal = document.createElement('div');
+  modal.id = 'sale-payment-modal';
+  modal.className = 'modal-overlay';
+  modal.innerHTML = `
+    <div class="modal-card">
+      <div class="modal-card__header">
+        <h3>Registar pagamento</h3>
+        <button type="button" class="btn btn-secondary" id="close-sale-payment-modal">Fechar</button>
+      </div>
+
+      <div class="modal-card__body">
+        <div class="toolbar">
+          <span class="badge">Cliente: <strong style="margin-left:6px;">${sale.customer_name || '-'}</strong></span>
+          <span class="badge">Total: <strong style="margin-left:6px;">${formatMoney(sale.total_amount || 0)}</strong></span>
+          <span class="badge">Pago: <strong style="margin-left:6px;">${formatMoney(sale.amount_paid || 0)}</strong></span>
+          <span class="badge">Dívida: <strong style="margin-left:6px;">${formatMoney(sale.amount_due || 0)}</strong></span>
+        </div>
+
+        <form id="sale-payment-form" class="form-grid">
+          <input type="hidden" name="sale_id" value="${sale.id}" />
+
+          <div class="field">
+            <label>Data do pagamento</label>
+            <input type="date" name="payment_date" value="${today}" required />
+          </div>
+
+          <div class="field">
+            <label>Valor pago</label>
+            <input
+              type="number"
+              name="amount_paid"
+              min="0.01"
+              max="${Number(sale.amount_due || 0)}"
+              step="0.01"
+              required
+            />
+          </div>
+
+          <div class="field">
+            <label>Método de pagamento</label>
+            <select name="payment_method">
+              <option value="">Selecionar</option>
+              <option value="cash">Dinheiro</option>
+              <option value="mpesa">M-Pesa</option>
+              <option value="emola">e-Mola</option>
+              <option value="bank_transfer">Transferência</option>
+              <option value="card">Cartão</option>
+              <option value="other">Outro</option>
+            </select>
+          </div>
+
+          <div class="field full">
+            <label>Observações</label>
+            <textarea name="notes"></textarea>
+          </div>
+
+          <div class="field full">
+            <button type="submit" class="btn btn-primary">Guardar pagamento</button>
+          </div>
+        </form>
+
+        <div id="sale-payment-feedback"></div>
+
+        <div class="card" style="margin-top:16px;">
+          <h4>Histórico de recebimentos</h4>
+          <div id="sale-payment-history">Carregando...</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+
+  document.querySelector('#close-sale-payment-modal')?.addEventListener('click', () => {
+    modal.remove();
+  });
+
+  modal.addEventListener('click', (event) => {
+    if (event.target === modal) {
+      modal.remove();
+    }
+  });
+
+  await renderSalePaymentHistory(sale.id);
+
+  const paymentForm = document.querySelector('#sale-payment-form');
+  const feedback = document.querySelector('#sale-payment-feedback');
+
+  paymentForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+
+    const fd = new FormData(paymentForm);
+
+    try {
+      await createSalePayment({
+        saleId: fd.get('sale_id'),
+        paymentDate: fd.get('payment_date'),
+        amountPaid: fd.get('amount_paid'),
+        paymentMethod: fd.get('payment_method'),
+        notes: fd.get('notes'),
+      });
+
+      showFeedback(feedback, 'Pagamento registado com sucesso.', 'success');
+
+      const updatedSale = await getSaleById(sale.id);
+
+      await renderSalePaymentHistory(sale.id);
+      await renderSales();
+
+      if (Number(updatedSale.amount_due || 0) <= 0) {
+        const currentModal = document.querySelector('#sale-payment-modal');
+        if (currentModal) currentModal.remove();
+      }
+    } catch (error) {
+      console.error(error);
+      showFeedback(
+        feedback,
+        error.message || 'Erro ao registar pagamento.',
+        'error'
+      );
+    }
+  });
+}
+
+async function renderSalePaymentHistory(saleId) {
+  const container = document.querySelector('#sale-payment-history');
+  if (!container) return;
+
+  try {
+    const payments = await getSalePayments(saleId);
+
+    if (!payments.length) {
+      container.innerHTML = `<p>Sem recebimentos registados.</p>`;
+      return;
+    }
+
+    container.innerHTML = `
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Data</th>
+              <th>Valor</th>
+              <th>Método</th>
+              <th>Observações</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${payments.map((payment) => `
+              <tr>
+                <td>${payment.payment_date || ''}</td>
+                <td>${formatMoney(payment.amount_paid || 0)}</td>
+                <td>${payment.payment_method || ''}</td>
+                <td>${payment.notes || ''}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  } catch (error) {
+    console.error(error);
+    container.innerHTML = `<p>Erro ao carregar histórico de pagamentos.</p>`;
+  }
 }
