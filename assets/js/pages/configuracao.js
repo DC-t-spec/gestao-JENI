@@ -39,7 +39,7 @@ export async function renderSettings() {
               <thead><tr><th>Nome</th><th>Email</th><th>Perfil</th><th>Ativo</th></tr></thead>
               <tbody>
                 ${(profiles || []).map((user) => `
-                  <tr><td>${user.full_name || ''}</td><td>${user.email || ''}</td><td>${user.role || ''}</td><td>${user.is_active ? 'Sim' : 'Não'}</td></tr>
+                  <tr><td>${user.full_name || '-'}</td><td>${user.email || '-'}</td><td>${user.role || '-'}</td><td>${user.is_active ? 'Sim' : 'Não'}</td></tr>
                 `).join('') || '<tr><td colspan="4">Sem utilizadores.</td></tr>'}
               </tbody>
             </table>
@@ -65,11 +65,16 @@ export async function renderSettings() {
         <div class="table-wrap">
           <table>
             <thead><tr><th>Quando</th><th>Ação</th><th>Tabela</th><th>Registo</th></tr></thead>
-            <tbody>
-              ${(audit || []).map((log) => `
-                <tr><td>${log.created_at || ''}</td><td>${log.action_type || ''}</td><td>${log.table_name || ''}</td><td>${log.record_id || ''}</td></tr>
-              `).join('') || '<tr><td colspan="4">Sem auditoria disponível.</td></tr>'}
-            </tbody>
+           <tbody>
+  ${(audit && audit.length) ? audit.map((log) => `
+    <tr>
+      <td>${log.created_at ? new Date(log.created_at).toLocaleString() : '-'}</td>
+      <td>${log.action_type || '-'}</td>
+      <td>${log.table_name || '-'}</td>
+      <td>${log.record_id || log.user_id || '-'}</td>
+    </tr>
+  `).join('') : '<tr><td colspan="4">Sem auditoria disponível.</td></tr>'}
+</tbody>>
           </table>
         </div>
       </div>
