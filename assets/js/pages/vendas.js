@@ -1,4 +1,5 @@
 import { supabase } from '../core/supabase-client.js';
+import { fetchBatches } from '../core/data.js';
 import { batchOptions, formatMoney, getCurrentUserId } from '../core/utils.js';
 import { setPageHeader, showFeedback } from '../ui/ui.js';
 import { dom } from '../ui/dom.js';
@@ -9,7 +10,6 @@ import {
   getSalePayments,
   createSalePayment,
 } from '../core/state.js';
-
 
 function getPaymentStatusLabel(status) {
   switch (status) {
@@ -32,11 +32,18 @@ function getPaymentStatusBadge(status) {
 export async function renderSales() {
   setPageHeader('Vendas', 'Registo de vendas com controlo de pagamento');
 
-  const { data: rows } = await supabase
+  // carregar lotes antes de montar o form
+  await fetchBatches();
+
+  const { data: rows, error: rowsError } = await supabase
     .from('sales')
     .select('*')
     .order('sale_date', { ascending: false })
     .limit(20);
+
+  if (rowsError) {
+    console.error('Erro ao buscar vendas:', rowsError);
+  }
 
   dom.pageContent.innerHTML = `
     <div class="split">
@@ -50,7 +57,9 @@ export async function renderSales() {
 
           <div class="field">
             <label>Lote</label>
-            <select name="batch_id">${batchOptions()}</select>
+            <select name="batch_id" required>
+              ${batchOptions()}
+            </select>
           </div>
 
           <div class="field">
@@ -144,43 +153,43 @@ export async function renderSales() {
         <h3>Últimas vendas</h3>
         <div class="table-wrap">
           <table>
-          <thead>
-  <tr>
-    <th>Data</th>
-    <th>Cliente</th>
-    <th>Qtd</th>
-    <th>Total</th>
-    <th>Pago</th>
-    <th>Dívida</th>
-    <th>Estado</th>
-    <th>Ações</th>
-  </tr>
-</thead>
-<tbody>
-  ${(rows || []).map((row) => `
-    <tr>
-      <td>${row.sale_date || ''}</td>
-      <td>${row.customer_name || ''}</td>
-      <td>${row.quantity || ''}</td>
-      <td>${formatMoney(row.total_amount || 0)}</td>
-      <td>${formatMoney(row.amount_paid || 0)}</td>
-      <td>${formatMoney(row.amount_due || 0)}</td>
-      <td>${getPaymentStatusBadge(row.payment_status)}</td>
-      <td>
-        ${Number(row.amount_due || 0) > 0 ? `
-          <button
-            type="button"
-            class="btn btn-secondary btn-sm"
-            data-action="register-payment"
-            data-sale-id="${row.id}"
-          >
-            Registar pagamento
-          </button>
-        ` : '<span class="muted">Sem ação</span>'}
-      </td>
-    </tr>
-  `).join('') || '<tr><td colspan="8">Sem vendas registadas.</td></tr>'}
-</tbody>
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Cliente</th>
+                <th>Qtd</th>
+                <th>Total</th>
+                <th>Pago</th>
+                <th>Dívida</th>
+                <th>Estado</th>
+                <th>Ações</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${(rows || []).map((row) => `
+                <tr>
+                  <td>${row.sale_date || ''}</td>
+                  <td>${row.customer_name || ''}</td>
+                  <td>${row.quantity || ''}</td>
+                  <td>${formatMoney(row.total_amount || 0)}</td>
+                  <td>${formatMoney(row.amount_paid || 0)}</td>
+                  <td>${formatMoney(row.amount_due || 0)}</td>
+                  <td>${getPaymentStatusBadge(row.payment_status)}</td>
+                  <td>
+                    ${Number(row.amount_due || 0) > 0 ? `
+                      <button
+                        type="button"
+                        class="btn btn-secondary btn-sm"
+                        data-action="register-payment"
+                        data-sale-id="${row.id}"
+                      >
+                        Registar pagamento
+                      </button>
+                    ` : '<span class="muted">Sem ação</span>'}
+                  </td>
+                </tr>
+              `).join('') || '<tr><td colspan="8">Sem vendas registadas.</td></tr>'}
+            </tbody>
           </table>
         </div>
       </div>
@@ -237,22 +246,24 @@ export async function renderSales() {
   updateSalesPreview();
 
   document.querySelectorAll('[data-action="register-payment"]').forEach((button) => {
-  button.addEventListener('click', async () => {
-    const saleId = button.dataset.saleId;
+    button.addEventListener('click', async () => {
+      const saleId = button.dataset.saleId;
 
-    try {
-      await openRegisterPaymentModal(saleId);
-    } catch (error) {
-      console.error(error);
-      alert(error.message || 'Erro ao abrir pagamento.');
-    }
+      try {
+        await openRegisterPaymentModal(saleId);
+      } catch (error) {
+        console.error(error);
+        alert(error.message || 'Erro ao abrir pagamento.');
+      }
+    });
   });
-});
 
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
 
     const fd = new FormData(form);
+
+    console.log('batch_id selecionado venda:', fd.get('batch_id'));
 
     const quantity = Number(fd.get('quantity'));
     const unitPrice = Number(fd.get('unit_price'));
@@ -263,28 +274,29 @@ export async function renderSales() {
     const vatAmount = applyVat ? Number(((subtotal * vatRate) / 100).toFixed(2)) : 0;
     const totalAmount = Number((subtotal + vatAmount).toFixed(2));
 
-const paymentStatus = String(fd.get('payment_status'));
-let amountPaid = Number(fd.get('amount_paid') || 0);
+    const paymentStatus = String(fd.get('payment_status'));
+    let amountPaid = Number(fd.get('amount_paid') || 0);
 
-if (paymentStatus === 'paid') {
-  amountPaid = totalAmount;
-} else if (paymentStatus === 'pending') {
-  amountPaid = 0;
-} else {
-  amountPaid = Math.min(Math.max(amountPaid, 0), totalAmount);
-}
+    if (paymentStatus === 'paid') {
+      amountPaid = totalAmount;
+    } else if (paymentStatus === 'pending') {
+      amountPaid = 0;
+    } else {
+      amountPaid = Math.min(Math.max(amountPaid, 0), totalAmount);
+    }
 
-const amountDue = Number(Math.max(totalAmount - amountPaid, 0).toFixed(2));
+    const amountDue = Number(Math.max(totalAmount - amountPaid, 0).toFixed(2));
 
-let normalizedPaymentStatus = paymentStatus;
+    let normalizedPaymentStatus = paymentStatus;
 
-if (amountDue <= 0) {
-  normalizedPaymentStatus = 'paid';
-} else if (amountPaid > 0) {
-  normalizedPaymentStatus = 'partial';
-} else {
-  normalizedPaymentStatus = 'pending';
-}
+    if (amountDue <= 0) {
+      normalizedPaymentStatus = 'paid';
+    } else if (amountPaid > 0) {
+      normalizedPaymentStatus = 'partial';
+    } else {
+      normalizedPaymentStatus = 'pending';
+    }
+
     const payload = {
       sale_date: fd.get('sale_date'),
       batch_id: fd.get('batch_id') || null,
@@ -295,7 +307,7 @@ if (amountDue <= 0) {
       apply_vat: applyVat,
       vat_rate: vatRate,
       payment_method: fd.get('payment_method') || null,
-     payment_status: normalizedPaymentStatus,
+      payment_status: normalizedPaymentStatus,
       amount_paid: amountPaid,
       amount_due: amountDue,
       due_date: fd.get('due_date') || null,
@@ -303,9 +315,9 @@ if (amountDue <= 0) {
       notes: String(fd.get('notes') || '').trim() || null,
       created_by: getCurrentUserId(),
       updated_by: getCurrentUserId(),
-     subtotal_amount: subtotal,
-vat_amount: vatAmount,
-total_amount: totalAmount,
+      subtotal_amount: subtotal,
+      vat_amount: vatAmount,
+      total_amount: totalAmount,
     };
 
     const { error } = await supabase.from('sales').insert(payload);
@@ -317,6 +329,7 @@ total_amount: totalAmount,
     }
 
     showFeedback(feedback, 'Venda registada com sucesso.', 'success');
+    form.reset();
     await renderSales();
   });
 }
