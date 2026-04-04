@@ -13,10 +13,17 @@ export async function renderSettings() {
     return;
   }
 
-  const [{ data: profiles }, { data: audit }] = await Promise.all([
+  const [
+    { data: profiles, error: profilesError },
+    { data: audit, error: auditError },
+  ] = await Promise.all([
     supabase.from('profiles').select('*').order('created_at', { ascending: false }),
     supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(25),
   ]);
+
+  console.log('profilesError:', profilesError);
+  console.log('auditError:', auditError);
+  console.log('audit:', audit);
 
   dom.pageContent.innerHTML = `
     <div class="grid gap-14">
@@ -39,7 +46,12 @@ export async function renderSettings() {
               <thead><tr><th>Nome</th><th>Email</th><th>Perfil</th><th>Ativo</th></tr></thead>
               <tbody>
                 ${(profiles || []).map((user) => `
-                  <tr><td>${user.full_name || '-'}</td><td>${user.email || '-'}</td><td>${user.role || '-'}</td><td>${user.is_active ? 'Sim' : 'Não'}</td></tr>
+                  <tr>
+                    <td>${user.full_name || '-'}</td>
+                    <td>${user.email || '-'}</td>
+                    <td>${user.role || '-'}</td>
+                    <td>${user.is_active ? 'Sim' : 'Não'}</td>
+                  </tr>
                 `).join('') || '<tr><td colspan="4">Sem utilizadores.</td></tr>'}
               </tbody>
             </table>
@@ -54,7 +66,13 @@ export async function renderSettings() {
           <table>
             <thead><tr><th>Nome</th><th>Início</th><th>Ativo</th></tr></thead>
             <tbody>
-              ${state.batches.map((batch) => `<tr><td>${batch.name}</td><td>${batch.start_date || ''}</td><td>${batch.is_active ? 'Sim' : 'Não'}</td></tr>`).join('') || '<tr><td colspan="3">Sem lotes.</td></tr>'}
+              ${state.batches.map((batch) => `
+                <tr>
+                  <td>${batch.name}</td>
+                  <td>${batch.start_date || ''}</td>
+                  <td>${batch.is_active ? 'Sim' : 'Não'}</td>
+                </tr>
+              `).join('') || '<tr><td colspan="3">Sem lotes.</td></tr>'}
             </tbody>
           </table>
         </div>
@@ -65,16 +83,16 @@ export async function renderSettings() {
         <div class="table-wrap">
           <table>
             <thead><tr><th>Quando</th><th>Ação</th><th>Tabela</th><th>Registo</th></tr></thead>
-           <tbody>
-  ${(audit && audit.length) ? audit.map((log) => `
-    <tr>
-      <td>${log.created_at ? new Date(log.created_at).toLocaleString() : '-'}</td>
-      <td>${log.action_type || '-'}</td>
-      <td>${log.table_name || '-'}</td>
-      <td>${log.record_id || log.user_id || '-'}</td>
-    </tr>
-  `).join('') : '<tr><td colspan="4">Sem auditoria disponível.</td></tr>'}
-</tbody>>
+            <tbody>
+              ${(audit && audit.length) ? audit.map((log) => `
+                <tr>
+                  <td>${log.created_at ? new Date(log.created_at).toLocaleString() : '-'}</td>
+                  <td>${log.action_type || '-'}</td>
+                  <td>${log.table_name || '-'}</td>
+                  <td>${log.record_id || log.user_id || '-'}</td>
+                </tr>
+              `).join('') : '<tr><td colspan="4">Sem auditoria disponível.</td></tr>'}
+            </tbody>
           </table>
         </div>
       </div>
@@ -83,15 +101,19 @@ export async function renderSettings() {
   document.querySelector('#batch-form').addEventListener('submit', async (event) => {
     event.preventDefault();
     const fd = new FormData(event.currentTarget);
+
     const payload = {
       name: String(fd.get('name')).trim(),
       start_date: fd.get('start_date'),
       notes: String(fd.get('notes') || '').trim() || null,
       created_by: getCurrentUserId(),
     };
+
     const { error } = await supabase.from('batches').insert(payload);
     const feedback = document.querySelector('#batch-feedback');
+
     if (error) return showFeedback(feedback, error.message, 'error');
+
     showFeedback(feedback, 'Lote criado com sucesso.', 'success');
     await fetchBatches();
     await renderSettings();
