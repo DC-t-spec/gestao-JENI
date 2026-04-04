@@ -23,104 +23,11 @@ export async function renderSettings() {
     fetchBatches(),
   ]);
 
-  state.batches = batches || [];
-
   console.log('profilesError:', profilesError);
   console.log('auditError:', auditError);
   console.log('audit:', audit);
-  console.log('batches:', state.batches);
+  console.log('batches:', batches);
 
   dom.pageContent.innerHTML = `
-    <div class="grid gap-14">
-      <div class="split">
-        <div class="card">
-          <h3>Novo lote</h3>
-          <form id="batch-form" class="form-grid">
-            <div class="field"><label>Nome do lote</label><input type="text" name="name" required placeholder="Ex: Lote Abril 2026" /></div>
-            <div class="field"><label>Data de início</label><input type="date" name="start_date" required /></div>
-            <div class="field full"><label>Observações</label><textarea name="notes"></textarea></div>
-            <div class="field full"><button class="btn btn-primary" type="submit">Criar lote</button></div>
-          </form>
-          <div id="batch-feedback"></div>
-        </div>
-
-        <div class="card">
-          <h3>Utilizadores</h3>
-          <div class="table-wrap">
-            <table>
-              <thead><tr><th>Nome</th><th>Email</th><th>Perfil</th><th>Ativo</th></tr></thead>
-              <tbody>
-                ${(profiles || []).map((user) => `
-                  <tr>
-                    <td>${user.full_name || '-'}</td>
-                    <td>${user.email || '-'}</td>
-                    <td>${user.role || '-'}</td>
-                    <td>${user.is_active ? 'Sim' : 'Não'}</td>
-                  </tr>
-                `).join('') || '<tr><td colspan="4">Sem utilizadores.</td></tr>'}
-              </tbody>
-            </table>
-          </div>
-          <div class="feedback warning mt-16">Para promover um utilizador a <strong>admin</strong>, faça update na tabela <strong>profiles</strong> no Supabase.</div>
-        </div>
-      </div>
-
-      <div class="card">
-        <h3>Lotes existentes</h3>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Nome</th><th>Início</th><th>Ativo</th></tr></thead>
-            <tbody>
-              ${state.batches.map((batch) => `
-                <tr>
-                  <td>${batch.name}</td>
-                  <td>${batch.start_date || ''}</td>
-                  <td>${batch.is_active ? 'Sim' : 'Não'}</td>
-                </tr>
-              `).join('') || '<tr><td colspan="3">Sem lotes.</td></tr>'}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="card">
-        <h3>Auditoria recente</h3>
-        <div class="table-wrap">
-          <table>
-            <thead><tr><th>Quando</th><th>Ação</th><th>Tabela</th><th>Registo</th></tr></thead>
-            <tbody>
-              ${(audit && audit.length) ? audit.map((log) => `
-                <tr>
-                  <td>${log.created_at ? new Date(log.created_at).toLocaleString() : '-'}</td>
-                  <td>${log.action_type || '-'}</td>
-                  <td>${log.table_name || '-'}</td>
-                  <td>${log.record_id || log.user_id || '-'}</td>
-                </tr>
-              `).join('') : '<tr><td colspan="4">Sem auditoria disponível.</td></tr>'}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </div>`;
-
-  document.querySelector('#batch-form').addEventListener('submit', async (event) => {
-    event.preventDefault();
-    const fd = new FormData(event.currentTarget);
-
-    const payload = {
-      name: String(fd.get('name')).trim(),
-      start_date: fd.get('start_date'),
-      notes: String(fd.get('notes') || '').trim() || null,
-      created_by: getCurrentUserId(),
-    };
-
-    const { error } = await supabase.from('batches').insert(payload);
-    const feedback = document.querySelector('#batch-feedback');
-
-    if (error) return showFeedback(feedback, error.message, 'error');
-
-    showFeedback(feedback, 'Lote criado com sucesso.', 'success');
-    state.batches = await fetchBatches();
-    await renderSettings();
-  });
-}
+    ...
+  `;
