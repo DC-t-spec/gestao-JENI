@@ -70,24 +70,25 @@ export async function renderSales() {
   form.addEventListener('submit', async (event) => {
     event.preventDefault();
     const fd = new FormData(form);
+    
     const payload = {
-      sale_date: fd.get('sale_date'),
-      batch_id: fd.get('batch_id') || null,
-      customer_name: String(fd.get('customer_name')).trim(),
-      quantity: Number(fd.get('quantity')),
-      total_weight: fd.get('total_weight') ? Number(fd.get('total_weight')) : null,
-      unit_price: Number(fd.get('unit_price')),
-      apply_vat: form.apply_vat.checked,
-      vat_rate: form.apply_vat.checked ? Number(fd.get('vat_rate') || 0) : 0,
-      payment_method: fd.get('payment_method') || null,
-      customer_contact: String(fd.get('customer_contact') || '').trim() || null,
-      notes: String(fd.get('notes') || '').trim() || null,
-      created_by: getCurrentUserId(),
-      updated_by: getCurrentUserId(),
-      subtotal_amount: 0,
-      vat_amount: 0,
-      total_amount: 0,
-    };
+  sale_date: fd.get('sale_date'),
+  batch_id: fd.get('batch_id') || null,
+  customer_name: String(fd.get('customer_name')).trim(),
+  quantity: Number(fd.get('quantity')),
+  total_weight: fd.get('total_weight') ? Number(fd.get('total_weight')) : null,
+  unit_price: Number(fd.get('unit_price')),
+  apply_vat: form.apply_vat.checked,
+  vat_rate: form.apply_vat.checked ? Number(fd.get('vat_rate') || 0) : 0,
+  payment_method: fd.get('payment_method') || null,
+  customer_contact: String(fd.get('customer_contact') || '').trim() || null,
+  notes: String(fd.get('notes') || '').trim() || null,
+  created_by: getCurrentUserId(),
+  updated_by: getCurrentUserId(),
+  subtotal_amount: 0,
+  vat_amount: 0,
+  total_amount: 0,
+};
 
     const { error } = await supabase.from('sales').insert(payload);
     const feedback = document.querySelector('#sales-feedback');
