@@ -6,6 +6,8 @@
   background: linear-gradient(135deg, #eff6ff 0%, #f8fafc 45%, #ecfeff 100%);
 }
 
+
+
 .auth-box {
   width: min(100%, 460px);
   background: var(--surface);
