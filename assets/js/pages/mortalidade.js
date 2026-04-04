@@ -5,6 +5,7 @@ import { dom } from '../ui/dom.js';
 
 export async function renderMortality() {
   setPageHeader('Mortalidade', 'Registo de pintos/frangos mortos');
+  
 
   const { data: rows } = await supabase.from('mortality_logs').select('*').order('log_date', { ascending: false }).limit(20);
 
