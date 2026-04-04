@@ -16,14 +16,19 @@ export async function renderSettings() {
   const [
     { data: profiles, error: profilesError },
     { data: audit, error: auditError },
+    batches,
   ] = await Promise.all([
     supabase.from('profiles').select('*').order('created_at', { ascending: false }),
     supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(25),
+    fetchBatches(),
   ]);
+
+  state.batches = batches || [];
 
   console.log('profilesError:', profilesError);
   console.log('auditError:', auditError);
   console.log('audit:', audit);
+  console.log('batches:', state.batches);
 
   dom.pageContent.innerHTML = `
     <div class="grid gap-14">
@@ -115,7 +120,7 @@ export async function renderSettings() {
     if (error) return showFeedback(feedback, error.message, 'error');
 
     showFeedback(feedback, 'Lote criado com sucesso.', 'success');
-    await fetchBatches();
+    state.batches = await fetchBatches();
     await renderSettings();
   });
 }
