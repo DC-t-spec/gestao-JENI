@@ -3,6 +3,11 @@ import { fetchBatches } from '../core/data.js';
 import { batchOptions, formatMoney, getCurrentUserId } from '../core/utils.js';
 import { setPageHeader, showFeedback } from '../ui/ui.js';
 import { dom } from '../ui/dom.js';
+import {
+  getActiveFinancialAccounts,
+  createFinancialTransaction,
+  buildFinancialAccountOptions,
+} from '../services/financial.service.js';
 
 export async function renderPurchases() {
   setPageHeader('Compras', 'Registo de compras e despesas');
@@ -10,11 +15,16 @@ export async function renderPurchases() {
   // carregar lotes antes de montar o form
   await fetchBatches();
 
-  const { data: rows, error: rowsError } = await supabase
-    .from('purchases')
-    .select('*')
-    .order('purchase_date', { ascending: false })
-    .limit(20);
+  const [accounts, purchaseRows] = await Promise.all([
+    getActiveFinancialAccounts().catch(() => []),
+    supabase
+      .from('purchases')
+      .select('*')
+      .order('purchase_date', { ascending: false })
+      .limit(20),
+  ]);
+
+  const { data: rows, error: rowsError } = purchaseRows;
 
   if (rowsError) {
     console.error('Erro ao buscar compras:', rowsError);
@@ -72,6 +82,13 @@ export async function renderPurchases() {
               <option value="bank_transfer">Transferência</option>
               <option value="card">Cartão</option>
               <option value="other">Outro</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label>Conta de saída</label>
+            <select name="financial_account_id">
+              ${buildFinancialAccountOptions(accounts, { placeholder: 'Selecionar conta financeira' })}
             </select>
           </div>
 
@@ -158,11 +175,31 @@ export async function renderPurchases() {
       updated_by: getCurrentUserId(),
     };
 
-    const { error } = await supabase.from('purchases').insert(payload);
+    const { data: insertedPurchase, error } = await supabase.from('purchases').insert(payload).select('*').single();
 
     if (error) {
       console.error('Erro ao guardar compra:', error);
       return showFeedback(feedback, error.message, 'error');
+    }
+
+
+    const financialAccountId = fd.get('financial_account_id') || null;
+    if (financialAccountId && insertedPurchase) {
+      try {
+        await createFinancialTransaction({
+          account_id: financialAccountId,
+          transaction_date: fd.get('purchase_date'),
+          direction: 'out',
+          transaction_type: 'purchase_payment',
+          amount: payload.total_amount,
+          reference_type: 'purchase',
+          reference_id: insertedPurchase.id,
+          description: `Pagamento de compra - ${payload.item_name}`,
+          notes: payload.notes || null,
+        });
+      } catch (transactionError) {
+        console.error('Erro ao criar movimento financeiro da compra:', transactionError);
+      }
     }
 
     showFeedback(feedback, 'Compra registada com sucesso.', 'success');

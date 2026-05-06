@@ -3,9 +3,13 @@ import { fetchBatches } from '../core/data.js';
 import { batchOptions, formatMoney, getCurrentUserId } from '../core/utils.js';
 import { setPageHeader, showFeedback } from '../ui/ui.js';
 import { dom } from '../ui/dom.js';
+import {
+  getActiveFinancialAccounts,
+  createFinancialTransaction,
+  buildFinancialAccountOptions,
+} from '../services/financial.service.js';
 
 import {
-  getRecentSales,
   getSaleById,
   getSalePayments,
   createSalePayment,
@@ -35,11 +39,16 @@ export async function renderSales() {
   // carregar lotes antes de montar o form
   await fetchBatches();
 
-  const { data: rows, error: rowsError } = await supabase
-    .from('sales')
-    .select('*')
-    .order('sale_date', { ascending: false })
-    .limit(20);
+  const [accounts, salesRows] = await Promise.all([
+    getActiveFinancialAccounts().catch(() => []),
+    supabase
+      .from('sales')
+      .select('*')
+      .order('sale_date', { ascending: false })
+      .limit(20),
+  ]);
+
+  const { data: rows, error: rowsError } = salesRows;
 
   if (rowsError) {
     console.error('Erro ao buscar vendas:', rowsError);
@@ -105,6 +114,13 @@ export async function renderSales() {
               <option value="bank_transfer">Transferência</option>
               <option value="card">Cartão</option>
               <option value="other">Outro</option>
+            </select>
+          </div>
+
+          <div class="field">
+            <label>Conta de entrada</label>
+            <select name="financial_account_id">
+              ${buildFinancialAccountOptions(accounts, { placeholder: 'Selecionar conta financeira' })}
             </select>
           </div>
 
@@ -320,12 +336,32 @@ export async function renderSales() {
       total_amount: totalAmount,
     };
 
-    const { error } = await supabase.from('sales').insert(payload);
+    const { data: insertedSale, error } = await supabase.from('sales').insert(payload).select('*').single();
     const feedback = document.querySelector('#sales-feedback');
 
     if (error) {
       console.error('Erro ao guardar venda:', error);
       return showFeedback(feedback, `${error.message} ${error.details || ''}`, 'error');
+    }
+
+
+    const financialAccountId = fd.get('financial_account_id') || null;
+    if (financialAccountId && Number(amountPaid) > 0 && insertedSale) {
+      try {
+        await createFinancialTransaction({
+          account_id: financialAccountId,
+          transaction_date: fd.get('sale_date'),
+          direction: 'in',
+          transaction_type: 'sale_payment',
+          amount: amountPaid,
+          reference_type: 'sale',
+          reference_id: insertedSale.id,
+          description: `Recebimento de venda - ${payload.customer_name}`,
+          notes: payload.notes || null,
+        });
+      } catch (transactionError) {
+        console.error('Erro ao criar movimento financeiro da venda:', transactionError);
+      }
     }
 
     showFeedback(feedback, 'Venda registada com sucesso.', 'success');
@@ -336,6 +372,7 @@ export async function renderSales() {
 
 async function openRegisterPaymentModal(saleId) {
   const sale = await getSaleById(saleId);
+  const accounts = await getActiveFinancialAccounts().catch(() => []);
 
   if (!sale) {
     throw new Error('Venda não encontrada.');
@@ -397,6 +434,13 @@ async function openRegisterPaymentModal(saleId) {
             </select>
           </div>
 
+          <div class="field">
+            <label>Conta de entrada</label>
+            <select name="financial_account_id">
+              ${buildFinancialAccountOptions(accounts, { placeholder: 'Selecionar conta financeira' })}
+            </select>
+          </div>
+
           <div class="field full">
             <label>Observações</label>
             <textarea name="notes"></textarea>
@@ -440,13 +484,33 @@ async function openRegisterPaymentModal(saleId) {
     const fd = new FormData(paymentForm);
 
     try {
-      await createSalePayment({
+      const paymentRecord = await createSalePayment({
         saleId: fd.get('sale_id'),
         paymentDate: fd.get('payment_date'),
         amountPaid: fd.get('amount_paid'),
         paymentMethod: fd.get('payment_method'),
         notes: fd.get('notes'),
       });
+
+
+      const selectedAccountId = fd.get('financial_account_id') || null;
+      if (selectedAccountId && paymentRecord) {
+        try {
+          await createFinancialTransaction({
+            account_id: selectedAccountId,
+            transaction_date: fd.get('payment_date'),
+            direction: 'in',
+            transaction_type: 'sale_payment',
+            amount: fd.get('amount_paid'),
+            reference_type: 'sale_payment',
+            reference_id: paymentRecord.id,
+            description: `Pagamento parcial de venda - ${sale.customer_name || ''}`.trim(),
+            notes: fd.get('notes') || null,
+          });
+        } catch (transactionError) {
+          console.error('Erro ao criar movimento financeiro do pagamento parcial:', transactionError);
+        }
+      }
 
       showFeedback(feedback, 'Pagamento registado com sucesso.', 'success');
 
