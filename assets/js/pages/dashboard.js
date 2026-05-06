@@ -3,6 +3,19 @@ import { formatMoney, formatNumber } from '../core/utils.js';
 import { setPageHeader } from '../ui/ui.js';
 import { dom } from '../ui/dom.js';
 import { navTo } from '../router.js';
+import {
+  getFinancialAccountBalances,
+  getReceivablesSummary,
+} from '../services/financial.service.js';
+
+function getBalanceByName(accounts, keyword) {
+  const normalizedKeyword = String(keyword || '').toLowerCase();
+  const account = (accounts || []).find((item) =>
+    String(item.name || '').toLowerCase().includes(normalizedKeyword)
+  );
+
+  return Number(account?.current_balance || 0);
+}
 
 export async function renderDashboard() {
   setPageHeader('Dashboard', 'Resumo financeiro e operacional');
@@ -12,10 +25,14 @@ export async function renderDashboard() {
     .select('*')
     .single();
 
-  const { data: stockData } = await supabase
-    .from('batch_stock_summary')
-    .select('*')
-    .order('start_date', { ascending: false });
+  const [{ data: stockData }, financialBalances, receivables] = await Promise.all([
+    supabase
+      .from('batch_stock_summary')
+      .select('*')
+      .order('start_date', { ascending: false }),
+    getFinancialAccountBalances().catch(() => []),
+    getReceivablesSummary().catch(() => null),
+  ]);
 
   if (error) {
     dom.pageContent.innerHTML = `
@@ -45,6 +62,61 @@ export async function renderDashboard() {
         <div class="quick-card" data-quick="mortalidade">
           <strong>Registar morte</strong>
           <span>Atualizar o sistema sempre que houver perda.</span>
+        </div>
+      </div>
+
+
+      <div class="card">
+        <div class="section-title">
+          <div>
+            <h3>Financeiro Real</h3>
+            <div class="muted">Saldos por conta financeira</div>
+          </div>
+        </div>
+
+        <div class="dashboard-grid">
+          <div class="card stat">
+            <h4>Caixa físico</h4>
+            <strong>${formatMoney(getBalanceByName(financialBalances, 'caixa'))}</strong>
+          </div>
+          <div class="card stat">
+            <h4>M-Pesa JENI</h4>
+            <strong>${formatMoney(getBalanceByName(financialBalances, 'mpesa'))}</strong>
+          </div>
+          <div class="card stat">
+            <h4>e-Mola JENI</h4>
+            <strong>${formatMoney(getBalanceByName(financialBalances, 'emola'))}</strong>
+          </div>
+          <div class="card stat">
+            <h4>Conta bancária</h4>
+            <strong>${formatMoney(getBalanceByName(financialBalances, 'banco'))}</strong>
+          </div>
+          <div class="card stat">
+            <h4>Cartão / POS</h4>
+            <strong>${formatMoney(getBalanceByName(financialBalances, 'cartao'))}</strong>
+          </div>
+          <div class="card stat">
+            <h4>Total disponível</h4>
+            <strong>${formatMoney((financialBalances || []).reduce((sum, account) => sum + Number(account.current_balance || 0), 0))}</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="section-title">
+          <div>
+            <h3>Contas a Receber</h3>
+            <div class="muted">Resumo de dívidas e vencimentos</div>
+          </div>
+        </div>
+
+        <div class="dashboard-grid">
+          <div class="card stat"><h4>Total em dívida</h4><strong>${formatMoney(receivables?.total_due || 0)}</strong></div>
+          <div class="card stat"><h4>A receber hoje</h4><strong>${formatMoney(receivables?.due_today || 0)}</strong></div>
+          <div class="card stat"><h4>A receber esta semana</h4><strong>${formatMoney(receivables?.due_this_week || 0)}</strong></div>
+          <div class="card stat"><h4>A receber este mês</h4><strong>${formatMoney(receivables?.due_this_month || 0)}</strong></div>
+          <div class="card stat"><h4>Valor em atraso</h4><strong>${formatMoney(receivables?.overdue_amount || 0)}</strong></div>
+          <div class="card stat"><h4>Vendas em atraso</h4><strong>${formatNumber(receivables?.overdue_sales_count || 0)}</strong></div>
         </div>
       </div>
 
