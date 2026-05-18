@@ -7,6 +7,7 @@ import {
   getActiveFinancialAccounts,
   createFinancialTransaction,
   buildFinancialAccountOptions,
+  findAccountByPaymentMethod,
 } from '../services/financial.service.js';
 
 export async function renderPurchases() {
@@ -183,7 +184,22 @@ export async function renderPurchases() {
     }
 
 
-    const financialAccountId = fd.get('financial_account_id') || null;
+    const selectedPaymentMethod = fd.get('payment_method') || null;
+    let financialAccountId = fd.get('financial_account_id') || null;
+
+    if (selectedPaymentMethod && !financialAccountId) {
+      const accountByMethod = findAccountByPaymentMethod(accounts, selectedPaymentMethod);
+      financialAccountId = accountByMethod?.id || null;
+    }
+
+    if (selectedPaymentMethod && !financialAccountId) {
+      return showFeedback(
+        feedback,
+        'Não existe conta financeira ativa para o método de pagamento selecionado.',
+        'error'
+      );
+    }
+
     if (financialAccountId && insertedPurchase) {
       try {
         await createFinancialTransaction({

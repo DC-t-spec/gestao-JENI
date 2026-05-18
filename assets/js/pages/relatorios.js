@@ -32,14 +32,20 @@ export async function renderReports() {
       return showFeedback(feedback, 'A data inicial não pode ser maior que a data final.', 'warning');
     }
 
-    const [{ data: sales, error: salesError }, { data: purchases, error: purchasesError }, { data: mortality, error: mortalityError }] = await Promise.all([
+    const [
+      { data: sales, error: salesError },
+      { data: purchases, error: purchasesError },
+      { data: mortality, error: mortalityError },
+      { data: transactions, error: transactionsError },
+    ] = await Promise.all([
       supabase.from('sales_financial_report').select('*').gte('sale_date', startDate).lte('sale_date', endDate).order('sale_date', { ascending: false }),
       supabase.from('purchases').select('*').gte('purchase_date', startDate).lte('purchase_date', endDate).order('purchase_date', { ascending: false }),
       supabase.from('mortality_logs').select('*').gte('log_date', startDate).lte('log_date', endDate).order('log_date', { ascending: false }),
+      supabase.from('financial_transactions').select('*').gte('transaction_date', startDate).lte('transaction_date', endDate).order('transaction_date', { ascending: false }),
     ]);
 
-    if (salesError || purchasesError || mortalityError) {
-      return showFeedback(feedback, salesError?.message || purchasesError?.message || mortalityError?.message, 'error');
+    if (salesError || purchasesError || mortalityError || transactionsError) {
+      return showFeedback(feedback, salesError?.message || purchasesError?.message || mortalityError?.message || transactionsError?.message, 'error');
     }
 
     const totalBase = (sales || []).reduce((sum, row) => sum + Number(row.taxable_base || 0), 0);
@@ -48,6 +54,13 @@ export async function renderReports() {
     const totalPurchases = (purchases || []).reduce((sum, row) => sum + Number(row.total_amount || 0), 0);
     const totalDeaths = (mortality || []).reduce((sum, row) => sum + Number(row.quantity_dead || 0), 0);
     const balance = totalSales - totalPurchases;
+    const cashIn = (transactions || [])
+      .filter((row) => String(row.direction || '').toLowerCase() === 'in')
+      .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    const cashOut = (transactions || [])
+      .filter((row) => String(row.direction || '').toLowerCase() === 'out')
+      .reduce((sum, row) => sum + Number(row.amount || 0), 0);
+    const realCash = cashIn - cashOut;
 
     showFeedback(feedback, 'Relatório gerado com sucesso.', 'success');
 
@@ -58,6 +71,9 @@ export async function renderReports() {
         <div class="card stat"><h4>Total vendas</h4><strong>${formatMoney(totalSales)}</strong></div>
         <div class="card stat"><h4>Total compras</h4><strong>${formatMoney(totalPurchases)}</strong></div>
         <div class="card stat"><h4>Saldo do período</h4><strong>${formatMoney(balance)}</strong></div>
+        <div class="card stat"><h4>Entradas de caixa real</h4><strong>${formatMoney(cashIn)}</strong></div>
+        <div class="card stat"><h4>Saídas de caixa real</h4><strong>${formatMoney(cashOut)}</strong></div>
+        <div class="card stat"><h4>Caixa real do período</h4><strong>${formatMoney(realCash)}</strong></div>
         <div class="card stat"><h4>Mortalidade no período</h4><strong>${formatNumber(totalDeaths)}</strong></div>
       </div>
 

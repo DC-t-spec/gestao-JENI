@@ -7,6 +7,8 @@ import {
   getActiveFinancialAccounts,
   createFinancialTransaction,
   buildFinancialAccountOptions,
+  findAccountByPaymentMethod,
+  mapPaymentMethodToAccountType,
 } from '../services/financial.service.js';
 
 import {
@@ -313,6 +315,15 @@ export async function renderSales() {
       normalizedPaymentStatus = 'pending';
     }
 
+    const selectedPaymentMethod = fd.get('payment_method') || null;
+    if (selectedPaymentMethod) {
+      try {
+        mapPaymentMethodToAccountType(selectedPaymentMethod);
+      } catch (paymentMethodError) {
+        return showFeedback(feedback, paymentMethodError.message, 'error');
+      }
+    }
+
     const payload = {
       sale_date: fd.get('sale_date'),
       batch_id: fd.get('batch_id') || null,
@@ -322,7 +333,7 @@ export async function renderSales() {
       unit_price: unitPrice,
       apply_vat: applyVat,
       vat_rate: vatRate,
-      payment_method: fd.get('payment_method') || null,
+      payment_method: selectedPaymentMethod,
       payment_status: normalizedPaymentStatus,
       amount_paid: amountPaid,
       amount_due: amountDue,
@@ -344,8 +355,20 @@ export async function renderSales() {
       return showFeedback(feedback, `${error.message} ${error.details || ''}`, 'error');
     }
 
+    let financialAccountId = fd.get('financial_account_id') || null;
+    if (selectedPaymentMethod && !financialAccountId) {
+      const accountByMethod = findAccountByPaymentMethod(accounts, selectedPaymentMethod);
+      financialAccountId = accountByMethod?.id || null;
+    }
 
-    const financialAccountId = fd.get('financial_account_id') || null;
+    if (selectedPaymentMethod && Number(amountPaid) > 0 && !financialAccountId) {
+      return showFeedback(
+        feedback,
+        'Não existe conta financeira ativa para o método de pagamento selecionado.',
+        'error'
+      );
+    }
+
     if (financialAccountId && Number(amountPaid) > 0 && insertedSale) {
       try {
         await createFinancialTransaction({
@@ -484,16 +507,30 @@ async function openRegisterPaymentModal(saleId) {
     const fd = new FormData(paymentForm);
 
     try {
+      const selectedPaymentMethod = fd.get('payment_method') || null;
+      if (selectedPaymentMethod) {
+        mapPaymentMethodToAccountType(selectedPaymentMethod);
+      }
+
       const paymentRecord = await createSalePayment({
         saleId: fd.get('sale_id'),
         paymentDate: fd.get('payment_date'),
         amountPaid: fd.get('amount_paid'),
-        paymentMethod: fd.get('payment_method'),
+        paymentMethod: selectedPaymentMethod,
         notes: fd.get('notes'),
       });
 
 
-      const selectedAccountId = fd.get('financial_account_id') || null;
+      let selectedAccountId = fd.get('financial_account_id') || null;
+      if (selectedPaymentMethod && !selectedAccountId) {
+        const accountByMethod = findAccountByPaymentMethod(accounts, selectedPaymentMethod);
+        selectedAccountId = accountByMethod?.id || null;
+      }
+
+      if (!selectedAccountId) {
+        throw new Error('Não existe conta financeira ativa para o método de pagamento selecionado.');
+      }
+
       if (selectedAccountId && paymentRecord) {
         try {
           await createFinancialTransaction({
