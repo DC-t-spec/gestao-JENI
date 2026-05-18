@@ -1,6 +1,32 @@
 import { supabase } from '../core/supabase-client.js';
 import { getCurrentUserId } from '../core/utils.js';
 
+const PAYMENT_METHOD_TO_ACCOUNT_TYPE = Object.freeze({
+  cash: 'cash',
+  mpesa: 'mpesa',
+  emola: 'emola',
+  bank_transfer: 'bank',
+  bank: 'bank',
+  card: 'card',
+  other: 'other',
+});
+
+export function mapPaymentMethodToAccountType(paymentMethod) {
+  const normalizedPaymentMethod = String(paymentMethod || '').trim().toLowerCase();
+  const accountType = PAYMENT_METHOD_TO_ACCOUNT_TYPE[normalizedPaymentMethod];
+
+  if (!accountType) {
+    throw new Error(`Método de pagamento inválido: ${paymentMethod || 'não informado'}.`);
+  }
+
+  return accountType;
+}
+
+export function findAccountByPaymentMethod(accounts, paymentMethod) {
+  const accountType = mapPaymentMethodToAccountType(paymentMethod);
+  return (accounts || []).find((account) => account.type === accountType) || null;
+}
+
 export async function getFinancialAccountBalances() {
   const { data, error } = await supabase
     .from('financial_account_balances')
@@ -35,6 +61,23 @@ export async function getFinancialTransactions(limit = 20) {
 }
 
 export async function createFinancialTransaction(payload) {
+  const createdBy = payload.created_by || getCurrentUserId();
+  if (!createdBy) {
+    throw new Error('Utilizador autenticado não encontrado para created_by.');
+  }
+
+  if (payload.reference_type && payload.reference_id) {
+    const { data: existingReference, error: existingReferenceError } = await supabase
+      .from('financial_transactions')
+      .select('id')
+      .eq('reference_type', payload.reference_type)
+      .eq('reference_id', payload.reference_id)
+      .maybeSingle();
+
+    if (existingReferenceError) throw existingReferenceError;
+    if (existingReference) return existingReference;
+  }
+
   const dataToInsert = {
     transaction_date: payload.transaction_date,
     account_id: payload.account_id,
@@ -45,7 +88,7 @@ export async function createFinancialTransaction(payload) {
     reference_id: payload.reference_id || null,
     description: payload.description || null,
     notes: payload.notes || null,
-    created_by: payload.created_by || getCurrentUserId(),
+    created_by: createdBy,
   };
 
   const { data, error } = await supabase
