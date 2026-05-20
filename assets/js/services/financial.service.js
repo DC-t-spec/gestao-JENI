@@ -162,6 +162,7 @@ export async function createAccountTransfer(payload) {
 
   const note = payload.description || null;
   const transactionDate = payload.transaction_date;
+  const transferGroupId = globalThis.crypto?.randomUUID?.() || `transfer_${Date.now()}`;
   const transferRows = [
     {
       transaction_date: transactionDate,
@@ -170,7 +171,7 @@ export async function createAccountTransfer(payload) {
       transaction_type: 'transfer_out',
       amount,
       reference_type: 'account_transfer',
-      reference_id: null,
+      reference_id: transferGroupId,
       description: note,
       notes: note,
       created_by: createdBy,
@@ -182,18 +183,38 @@ export async function createAccountTransfer(payload) {
       transaction_type: 'transfer_in',
       amount,
       reference_type: 'account_transfer',
-      reference_id: null,
+      reference_id: transferGroupId,
       description: note,
       notes: note,
       created_by: createdBy,
     },
   ];
 
+  const isLocalhost = ['localhost', '127.0.0.1'].includes(globalThis.location?.hostname);
+  if (isLocalhost) {
+    console.info('[financial][transfer] payload_out', transferRows[0]);
+    console.info('[financial][transfer] payload_in', transferRows[1]);
+  }
+
   const { data, error } = await supabase
     .from('financial_transactions')
     .insert(transferRows)
     .select('*');
 
+  if (isLocalhost) {
+    console.info('[financial][transfer] supabase_response', { data, error });
+  }
+
   if (error) throw error;
+  if (!Array.isArray(data) || data.length !== 2) {
+    throw new Error('Falha ao gravar transferência completa. Nenhuma operação foi concluída.');
+  }
+
+  const hasTransferOut = data.some((row) => row.transaction_type === 'transfer_out');
+  const hasTransferIn = data.some((row) => row.transaction_type === 'transfer_in');
+  if (!hasTransferOut || !hasTransferIn) {
+    throw new Error('Transferência inconsistente detectada. Verifique as permissões de inserção.');
+  }
+
   return data || [];
 }
