@@ -22,25 +22,37 @@ function getBalanceByName(accounts, keyword) {
 
 function openFinancialModal({ title, fields, submitLabel, onSubmit }) {
   const overlay = document.createElement('div');
-  overlay.className = 'modal-backdrop';
+  overlay.className = 'modal-overlay';
   overlay.innerHTML = `
-    <div class="modal card" style="max-width:560px;margin:40px auto;">
-      <h3>${title}</h3>
+    <div class="modal-card" style="width:min(560px,100%);">
+      <div class="modal-card__header">
+        <h3>${title}</h3>
+        <button type="button" class="btn btn-secondary" data-close-modal>Fechar</button>
+      </div>
       <form class="form-grid" id="financial-action-form">
-        ${fields}
-        <div id="financial-modal-feedback" class="field full"></div>
-        <div class="field full" style="display:flex;gap:10px;justify-content:flex-end;">
-          <button type="button" class="btn btn-secondary" data-close-modal>Cancelar</button>
-          <button type="submit" class="btn btn-primary">${submitLabel}</button>
+        <div class="modal-card__body">
+          ${fields}
+          <div id="financial-modal-feedback" class="field full"></div>
+          <div class="field full" style="display:flex;gap:10px;justify-content:flex-end;">
+            <button type="button" class="btn btn-secondary" data-close-modal>Cancelar</button>
+            <button type="submit" class="btn btn-primary">${submitLabel}</button>
+          </div>
         </div>
       </form>
     </div>
   `;
 
+  const previousBodyOverflow = document.body.style.overflow;
+  document.body.style.overflow = 'hidden';
   document.body.appendChild(overlay);
 
-  const close = () => overlay.remove();
-  overlay.querySelector('[data-close-modal]').addEventListener('click', close);
+  const close = () => {
+    document.body.style.overflow = previousBodyOverflow;
+    overlay.remove();
+  };
+  overlay.querySelectorAll('[data-close-modal]').forEach((button) => {
+    button.addEventListener('click', close);
+  });
   overlay.addEventListener('click', (event) => {
     if (event.target === overlay) close();
   });
