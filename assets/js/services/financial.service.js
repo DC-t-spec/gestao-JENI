@@ -120,3 +120,80 @@ export function buildFinancialAccountOptions(accounts, { placeholder = 'Selecion
 
   return emptyOption + options;
 }
+
+export async function createManualDeposit(payload) {
+  const createdBy = payload.created_by || getCurrentUserId();
+  if (!createdBy) throw new Error('Utilizador autenticado não encontrado para created_by.');
+  if (!payload.account_id) throw new Error('Conta destino é obrigatória.');
+  if (Number(payload.amount) <= 0) throw new Error('Valor deve ser maior que zero.');
+
+  return createFinancialTransaction({
+    transaction_date: payload.transaction_date,
+    account_id: payload.account_id,
+    direction: 'in',
+    transaction_type: 'manual_entry',
+    amount: Number(payload.amount),
+    reference_type: 'manual_deposit',
+    reference_id: null,
+    description: payload.description || null,
+    notes: payload.description || null,
+    created_by: createdBy,
+  });
+}
+
+export async function createAccountTransfer(payload) {
+  const createdBy = payload.created_by || getCurrentUserId();
+  const amount = Number(payload.amount || 0);
+
+  if (!createdBy) throw new Error('Utilizador autenticado não encontrado para created_by.');
+  if (!payload.from_account_id || !payload.to_account_id) throw new Error('Conta origem e destino são obrigatórias.');
+  if (payload.from_account_id === payload.to_account_id) throw new Error('Conta origem deve ser diferente da conta destino.');
+  if (amount <= 0) throw new Error('Valor deve ser maior que zero.');
+
+  const { data: accounts, error: accountsError } = await supabase
+    .from('financial_accounts')
+    .select('id, is_active')
+    .in('id', [payload.from_account_id, payload.to_account_id]);
+  if (accountsError) throw accountsError;
+
+  if ((accounts || []).length !== 2 || (accounts || []).some((account) => !account.is_active)) {
+    throw new Error('Transferência inválida: selecione apenas contas activas.');
+  }
+
+  const note = payload.description || null;
+  const transactionDate = payload.transaction_date;
+  const transferRows = [
+    {
+      transaction_date: transactionDate,
+      account_id: payload.from_account_id,
+      direction: 'out',
+      transaction_type: 'transfer_out',
+      amount,
+      reference_type: 'account_transfer',
+      reference_id: null,
+      description: note,
+      notes: note,
+      created_by: createdBy,
+    },
+    {
+      transaction_date: transactionDate,
+      account_id: payload.to_account_id,
+      direction: 'in',
+      transaction_type: 'transfer_in',
+      amount,
+      reference_type: 'account_transfer',
+      reference_id: null,
+      description: note,
+      notes: note,
+      created_by: createdBy,
+    },
+  ];
+
+  const { data, error } = await supabase
+    .from('financial_transactions')
+    .insert(transferRows)
+    .select('*');
+
+  if (error) throw error;
+  return data || [];
+}
