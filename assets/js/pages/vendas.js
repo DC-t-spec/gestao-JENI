@@ -231,17 +231,11 @@ export async function renderSales() {
     const vatAmount = applyVat ? Number(((subtotal * vatRate) / 100).toFixed(2)) : 0;
     const total = Number((subtotal + vatAmount).toFixed(2));
 
-    let amountPaid = Number(amountPaidField.value || 0);
+    const amountPaid = Number(amountPaidField.value || 0);
 
     if (paymentStatus === 'paid') {
-      amountPaid = total;
-      amountPaidField.value = total.toFixed(2);
       dueDateField.disabled = true;
       dueDateField.value = '';
-    } else if (paymentStatus === 'pending') {
-      amountPaid = 0;
-      amountPaidField.value = '0.00';
-      dueDateField.disabled = false;
     } else {
       dueDateField.disabled = false;
     }
@@ -293,15 +287,7 @@ export async function renderSales() {
     const totalAmount = Number((subtotal + vatAmount).toFixed(2));
 
     const paymentStatus = String(fd.get('payment_status'));
-    let amountPaid = Number(fd.get('amount_paid') || 0);
-
-    if (paymentStatus === 'paid') {
-      amountPaid = totalAmount;
-    } else if (paymentStatus === 'pending') {
-      amountPaid = 0;
-    } else {
-      amountPaid = Math.min(Math.max(amountPaid, 0), totalAmount);
-    }
+    const amountPaid = Number(fd.get('amount_paid') || 0);
 
     const amountDue = Number(Math.max(totalAmount - amountPaid, 0).toFixed(2));
 
@@ -342,9 +328,6 @@ export async function renderSales() {
       notes: String(fd.get('notes') || '').trim() || null,
       created_by: getCurrentUserId(),
       updated_by: getCurrentUserId(),
-      subtotal_amount: subtotal,
-      vat_amount: vatAmount,
-      total_amount: totalAmount,
     };
 
     const { data: insertedSale, error } = await supabase.from('sales').insert(payload).select('*').single();
