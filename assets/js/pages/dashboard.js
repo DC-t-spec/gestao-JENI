@@ -11,13 +11,14 @@ import {
   getReceivablesSummary,
 } from '../services/financial.service.js';
 
-function getBalanceByName(accounts, keyword) {
-  const normalizedKeyword = String(keyword || '').toLowerCase();
-  const account = (accounts || []).find((item) =>
-    String(item.name || '').toLowerCase().includes(normalizedKeyword)
-  );
+function normalizeAccountBalancesByType(accounts) {
+  return (accounts || []).reduce((map, account) => {
+    const accountType = String(account?.type || '').trim().toLowerCase();
+    if (!accountType) return map;
 
-  return Number(account?.current_balance || 0);
+    map[accountType] = Number(account?.current_balance || 0);
+    return map;
+  }, {});
 }
 
 function openFinancialModal({ title, fields, submitLabel, onSubmit }) {
@@ -109,6 +110,12 @@ export async function renderDashboard() {
 
   const accountOptions = (activeAccounts || []).map((account) => `<option value="${account.id}">${account.name}</option>`).join('');
 
+  const balanceByType = normalizeAccountBalancesByType(financialBalances);
+  const totalAvailableBalance = (financialBalances || []).reduce(
+    (sum, account) => sum + Number(account?.current_balance || 0),
+    0
+  );
+
   dom.pageContent.innerHTML = `
     <div class="grid gap-14">
       <div class="quick-grid">
@@ -143,12 +150,12 @@ export async function renderDashboard() {
         </div>
 
         <div class="dashboard-grid">
-          <div class="card stat"><h4>Caixa físico</h4><strong>${formatMoney(getBalanceByName(financialBalances, 'caixa'))}</strong></div>
-          <div class="card stat"><h4>M-Pesa JENI</h4><strong>${formatMoney(getBalanceByName(financialBalances, 'mpesa'))}</strong></div>
-          <div class="card stat"><h4>e-Mola JENI</h4><strong>${formatMoney(getBalanceByName(financialBalances, 'emola'))}</strong></div>
-          <div class="card stat"><h4>Conta bancária</h4><strong>${formatMoney(getBalanceByName(financialBalances, 'banco'))}</strong></div>
-          <div class="card stat"><h4>Cartão / POS</h4><strong>${formatMoney(getBalanceByName(financialBalances, 'cartao'))}</strong></div>
-          <div class="card stat"><h4>Total disponível</h4><strong>${formatMoney((financialBalances || []).reduce((sum, account) => sum + Number(account.current_balance || 0), 0))}</strong></div>
+          <div class="card stat"><h4>Caixa físico</h4><strong>${formatMoney(balanceByType.cash ?? 0)}</strong></div>
+          <div class="card stat"><h4>M-Pesa JENI</h4><strong>${formatMoney(balanceByType.mpesa ?? 0)}</strong></div>
+          <div class="card stat"><h4>e-Mola JENI</h4><strong>${formatMoney(balanceByType.emola ?? 0)}</strong></div>
+          <div class="card stat"><h4>Conta bancária</h4><strong>${formatMoney(balanceByType.bank ?? 0)}</strong></div>
+          <div class="card stat"><h4>Cartão / POS</h4><strong>${formatMoney(balanceByType.card ?? 0)}</strong></div>
+          <div class="card stat"><h4>Total disponível</h4><strong>${formatMoney(totalAvailableBalance)}</strong></div>
         </div>
       </div>
 
