@@ -9,6 +9,7 @@ const departments = {
   avicultura: ['Avicultura', 'Indicadores consolidados do JENI Frangos e ovos'],
   tarefas: ['Tarefas e Agenda', 'Responsabilidades, prioridades e prazos da equipa'],
   'recursos-humanos': ['Recursos Humanos', 'Colaboradores, contratos, desempenho e formação'],
+  relatorios: ['Relatório Geral', 'Visão consolidada de todas as áreas da JENI Empreendimentos'],
 };
 const loading = document.querySelector('#management-loading');
 const denied = document.querySelector('#management-denied');
@@ -53,6 +54,7 @@ async function renderDepartment(key) {
   if (key === 'avicultura') return renderPoultry();
   if (key === 'tarefas') return renderTasks();
   if (key === 'recursos-humanos') return renderHumanResources();
+  if (key === 'relatorios') return renderGeneralReport();
   return renderRecords(key);
 }
 
@@ -534,6 +536,80 @@ async function renderTasks() {
   document.querySelectorAll('[data-status-table]').forEach(select=>select.addEventListener('change',async()=>{const payload={status:select.value,completed_at:select.value==='completed'?new Date().toISOString():null};const{error}=await supabase.from(select.dataset.statusTable).update(payload).eq('id',select.dataset.id);if(error)window.alert(error.message);await renderTasks();}));
   document.querySelectorAll('[data-event-status]').forEach(select=>select.addEventListener('change',async()=>{const{error}=await supabase.from('agenda_events').update({status:select.value,updated_at:new Date().toISOString()}).eq('id',select.dataset.eventStatus);if(error)window.alert(error.message);await renderTasks();}));
   bindActions(renderTasks);
+}
+
+function reportDates(period,start,end){
+  const today=new Date(),finish=new Date(today),begin=new Date(today);
+  if(period==='daily'){}
+  else if(period==='weekly')begin.setDate(today.getDate()-today.getDay()+1);
+  else if(period==='monthly')begin.setDate(1);
+  else if(period==='quarterly')begin.setMonth(Math.floor(today.getMonth()/3)*3,1);
+  else if(period==='semester')begin.setMonth(today.getMonth()<6?0:6,1);
+  else if(period==='annual')begin.setMonth(0,1);
+  else if(period==='custom'&&start&&end)return{start,end};
+  return{start:begin.toISOString().slice(0,10),end:finish.toISOString().slice(0,10)};
+}
+async function renderGeneralReport(filters={period:'monthly'}) {
+  const range=reportDates(filters.period,filters.start,filters.end);
+  const [{data:finance},{data:projects},{data:marketing},{data:artists},{data:poultry},{data:eggs},{data:tasks},{data:hr},{data:transactions},{data:projectRows},{data:campaigns},{data:activities}] = await Promise.all([
+    supabase.from('finance_summary').select('*').single(),supabase.from('project_management_summary').select('*').single(),
+    supabase.from('marketing_summary').select('*').single(),supabase.from('artist_agency_summary').select('*').single(),
+    supabase.from('dashboard_summary').select('*').single(),supabase.from('egg_business_summary').select('*').single(),
+    supabase.from('tasks_agenda_summary').select('*').single(),supabase.from('hr_summary').select('*').single(),
+    supabase.from('institutional_transactions').select('*').gte('transaction_date',range.start).lte('transaction_date',range.end).order('transaction_date',{ascending:false}),
+    supabase.from('project_records').select('*').order('created_at',{ascending:false}),
+    supabase.from('marketing_campaigns').select('*').order('start_date',{ascending:false}),
+    supabase.from('artist_activities').select('*,artists(artistic_name)').gte('activity_date',range.start).lte('activity_date',range.end).order('activity_date',{ascending:false})
+  ]);
+  const tx=transactions||[],periodIncome=tx.filter(t=>t.direction==='income'&&(t.approval_status||'approved')==='approved').reduce((n,t)=>n+Number(t.amount||0),0);
+  const periodExpenses=tx.filter(t=>t.direction==='expense'&&(t.approval_status||'approved')==='approved').reduce((n,t)=>n+Number(t.amount||0),0);
+  const dateIn=(v)=>v&&v>=range.start&&v<=range.end;
+  const pRows=(projectRows||[]).filter(p=>dateIn(p.start_date)||dateIn(p.due_date)||dateIn((p.created_at||'').slice(0,10)));
+  const cRows=(campaigns||[]).filter(c=>dateIn(c.start_date)||dateIn(c.end_date)||dateIn((c.created_at||'').slice(0,10)));
+  const periodLabels={daily:'Diário',weekly:'Semanal',monthly:'Mensal',quarterly:'Trimestral',semester:'Semestral',annual:'Anual',custom:'Personalizado'};
+  content.innerHTML=`<div class="grid gap-14">
+    <div class="card report-controls no-print"><h3>Configurar relatório</h3><form id="report-filter-form" class="form-grid">
+      <select name="period"><option value="daily" ${filters.period==='daily'?'selected':''}>Diário</option><option value="weekly" ${filters.period==='weekly'?'selected':''}>Semanal</option><option value="monthly" ${filters.period==='monthly'?'selected':''}>Mensal</option><option value="quarterly" ${filters.period==='quarterly'?'selected':''}>Trimestral</option><option value="semester" ${filters.period==='semester'?'selected':''}>Semestral</option><option value="annual" ${filters.period==='annual'?'selected':''}>Anual</option><option value="custom" ${filters.period==='custom'?'selected':''}>Datas personalizadas</option></select>
+      <input type="date" name="start" value="${range.start}"><input type="date" name="end" value="${range.end}">
+      <button class="btn btn-primary">Gerar relatório</button><button type="button" id="report-print" class="btn btn-secondary">Exportar para PDF</button>
+    </form></div>
+    <article id="general-report" class="report-document">
+      <div class="report-heading"><p class="eyebrow">JENI EMPREENDIMENTOS</p><h2>Relatório Geral de Gestão</h2>
+        <p><strong>Período:</strong> ${periodLabels[filters.period]} — ${range.start} a ${range.end}</p><p><strong>Gerado em:</strong> ${new Date().toLocaleString('pt-PT')}</p></div>
+      <section class="report-section"><h3>1. Resumo executivo</h3><div class="dashboard-grid">
+        ${stat('Receitas no período',money(periodIncome))}${stat('Despesas no período',money(periodExpenses))}${stat('Resultado no período',money(periodIncome-periodExpenses))}
+        ${stat('Projectos activos',projects?.active_projects||0)}${stat('Campanhas activas',marketing?.active_campaigns||0)}${stat('Artistas activos',artists?.active_artists||0)}
+      </div></section>
+      <section class="report-section"><h3>2. Financeiro</h3><div class="dashboard-grid">
+        ${stat('Saldo geral',money(finance?.total_balance))}${stat('A receber',money(finance?.total_receivable))}${stat('A pagar',money(finance?.total_payable))}${stat('Orçamento disponível',money(finance?.available_budget))}
+      </div>${simpleTable(['Data','Tipo','Categoria','Descrição','Valor'],tx.slice(0,30).map(t=>[t.transaction_date,t.direction==='income'?'Receita':'Despesa',t.category,t.description,money(t.amount)]))}</section>
+      <section class="report-section"><h3>3. Projectos e candidaturas</h3><div class="dashboard-grid">
+        ${stat('Projectos activos',projects?.active_projects||0)}${stat('Candidaturas em preparação',projects?.applications_preparing||0)}${stat('Orçamento aprovado',money(projects?.approved_budget))}${stat('Despesas',money(projects?.total_expenses))}
+      </div>${simpleTable(['Projecto/candidatura','Tipo','Responsável','Prazo','Estado'],pRows.slice(0,25).map(p=>[p.title,p.record_type||'-',p.responsible_name||'-',p.due_date||'-',p.status]))}</section>
+      <section class="report-section"><h3>4. Marketing e Comunicação</h3><div class="dashboard-grid">
+        ${stat('Campanhas activas',marketing?.active_campaigns||0)}${stat('Publicações',marketing?.published_content||0)}${stat('Alcance',marketing?.total_reach||0)}${stat('Visualizações',marketing?.total_views||0)}
+        ${stat('Orçamento',money(marketing?.total_budget))}${stat('Despesas',money(marketing?.total_expenses))}
+      </div>${simpleTable(['Campanha','Objectivo','Período','Orçamento','Estado'],cRows.slice(0,20).map(c=>[c.name,c.objective,c.start_date||'-'+' a '+(c.end_date||'-'),money(c.budget),c.status]))}</section>
+      <section class="report-section"><h3>5. Agência de Artistas</h3><div class="dashboard-grid">
+        ${stat('Artistas activos',artists?.active_artists||0)}${stat('Contratos activos',artists?.active_contracts||0)}${stat('Receita bruta',money(artists?.gross_income))}${stat('Ganho da JENI',money(artists?.jeni_income))}
+      </div>${simpleTable(['Data','Artista','Actividade','Bruto','Ganho JENI'],(activities||[]).slice(0,25).map(a=>[a.activity_date,a.artists?.artistic_name||'-',a.title,money(a.gross_amount),money(a.jeni_income)]))}</section>
+      <section class="report-section"><h3>6. Avicultura</h3><div class="dashboard-grid">
+        ${stat('Frangos vivos',poultry?.total_birds_alive||0)}${stat('Poedeiras vivas',eggs?.layers_alive||0)}${stat('Ovos em stock',eggs?.eggs_in_stock||0)}
+        ${stat('Receita de frangos',money(poultry?.total_revenue))}${stat('Receita de ovos',money(eggs?.egg_revenue))}${stat('Mortalidade',poultry?.total_mortality||0)}
+      </div></section>
+      <section class="report-section"><h3>7. Tarefas e Agenda</h3><div class="dashboard-grid">
+        ${stat('Tarefas abertas',tasks?.open_tasks||0)}${stat('Tarefas concluídas',tasks?.completed_tasks||0)}${stat('Tarefas atrasadas',tasks?.overdue_tasks||0)}${stat('Agenda da semana',tasks?.events_week||0)}
+      </div></section>
+      <section class="report-section"><h3>8. Recursos Humanos</h3><div class="dashboard-grid">
+        ${stat('Colaboradores activos',hr?.active_employees||0)}${stat('Contratos a terminar',hr?.expiring_contracts||0)}${stat('Ausências actuais',hr?.current_absences||0)}
+        ${stat('Avaliações pendentes',hr?.pending_reviews||0)}${stat('Formações pendentes',hr?.pending_trainings||0)}${stat('Aniversários do mês',hr?.birthdays_month||0)}
+      </div></section>
+      <section class="report-section"><h3>9. Observação</h3><p>Este relatório foi gerado automaticamente com base nos dados registados no sistema durante o período selecionado. Os indicadores consolidados representam a situação actual de cada área.</p></section>
+      <footer class="report-footer"><p>JENI Empreendimentos — Relatório confidencial de gestão</p></footer>
+    </article>
+  </div>`;
+  document.querySelector('#report-filter-form').addEventListener('submit',e=>{e.preventDefault();const fd=new FormData(e.currentTarget);renderGeneralReport({period:fd.get('period'),start:fd.get('start'),end:fd.get('end')});});
+  document.querySelector('#report-print').addEventListener('click',()=>window.print());
 }
 
 const money=v=>`${Number(v||0).toFixed(2)} MZN`;
