@@ -211,19 +211,63 @@ async function renderArtists() {
 }
 
 async function renderProjects() {
-  const {data:rows,error}=await supabase.from('funding_opportunities').select('*').order('deadline',{ascending:true});
+  const [{data:summary,error},{data:rows},{data:expenses},{data:milestones}] = await Promise.all([
+    supabase.from('projects_summary').select('*').single(),
+    supabase.from('project_records').select('*').order('created_at',{ascending:false}),
+    supabase.from('project_expenses').select('*,project_records(title)').order('expense_date',{ascending:false}).limit(30),
+    supabase.from('project_milestones').select('*,project_records(title)').order('due_date',{ascending:true}).limit(30),
+  ]);
   if(error)return showError(error);
-  content.innerHTML=`<div class="grid gap-14"><div class="card"><h3>Novo projecto ou candidatura</h3><form id="funding-form" class="form-grid">
-    <input name="title" placeholder="Nome do projecto ou edital" required><input name="funder" placeholder="Financiador">
-    <input name="country" placeholder="País"><input type="number" name="requested_amount" min="0" step="0.01" placeholder="Valor solicitado">
-    <input type="date" name="deadline"><input name="responsible_name" placeholder="Responsável"><input name="partners_text" placeholder="Parceiros">
-    <select name="status"><option value="identified">Identificado</option><option value="preparing">Em preparação</option><option value="submitted">Submetido</option><option value="approved">Aprovado</option><option value="rejected">Recusado</option></select>
-    <textarea name="notes" placeholder="Observações e documentos necessários"></textarea><button class="btn btn-primary">Guardar candidatura</button>
-  </form><div id="funding-feedback"></div></div>
-  <div class="card"><h3>Projectos e candidaturas</h3>${actionTable(['Título','Financiador','Prazo','Valor','Responsável','Estado','Acções'],(rows||[]).map(r=>[
-    r.title,r.funder||'-',r.deadline||'-',money(r.requested_amount),r.responsible_name||'-',r.status,actions('funding_opportunities',r.id,true)
-  ]))}</div></div>`;
-  document.querySelector('#funding-form').addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);const{error}=await supabase.from('funding_opportunities').insert({title:fd.get('title'),funder:fd.get('funder')||null,country:fd.get('country')||null,requested_amount:Number(fd.get('requested_amount')||0),deadline:fd.get('deadline')||null,responsible_name:fd.get('responsible_name')||null,partners_text:fd.get('partners_text')||null,status:fd.get('status'),notes:fd.get('notes')||null,created_by:profile.id});if(error)return feedback(error.message,'funding-feedback');await renderProjects();});
+  const projectOptions=(rows||[]).map(r=>`<option value="${r.id}">${r.title}</option>`).join('');
+  content.innerHTML=`<div class="grid gap-14">
+    <div class="dashboard-grid">${stat('Projectos activos',summary.active_projects)}${stat('Parcerias activas',summary.active_partnerships)}
+      ${stat('Candidaturas activas',summary.active_applications)}${stat('Prazos nos próximos 30 dias',summary.deadlines_30_days)}
+      ${stat('Orçamento total',money(summary.total_budget))}${stat('Financiamento aprovado',money(summary.approved_funding))}
+      ${stat('Despesas registadas',money(summary.total_expenses))}${stat('Saldo disponível',money(summary.available_balance))}</div>
+    <div class="card"><h3>Novo registo</h3><form id="project-record-form" class="form-grid">
+      <select name="record_type" required><option value="execution">Projecto em execução</option><option value="partnership">Parceria institucional</option><option value="application">Candidatura a financiamento</option></select>
+      <input name="title" placeholder="Nome do projecto, parceria ou edital" required><input name="funder" placeholder="Financiador ou instituição">
+      <input name="country" placeholder="País"><input name="responsible_name" placeholder="Responsável" required>
+      <input name="partners_text" placeholder="Parceiros"><input name="beneficiaries" placeholder="Beneficiários ou público-alvo">
+      <label>Data de início<input type="date" name="start_date"></label><label>Data de término<input type="date" name="end_date"></label>
+      <label>Prazo da candidatura/entrega<input type="date" name="deadline"></label>
+      <input type="number" name="total_budget" min="0" step="0.01" placeholder="Orçamento total">
+      <input type="number" name="requested_amount" min="0" step="0.01" placeholder="Valor solicitado">
+      <input type="number" name="approved_amount" min="0" step="0.01" placeholder="Financiamento aprovado">
+      <select name="status"><option value="identified">Identificado</option><option value="preparing">Em preparação</option><option value="submitted">Submetido</option><option value="approved">Aprovado</option><option value="in_progress">Em execução</option><option value="completed">Concluído</option><option value="suspended">Suspenso</option><option value="rejected">Recusado</option><option value="cancelled">Cancelado</option></select>
+      <input name="next_step" placeholder="Próximo passo" required><label>Prazo do próximo passo<input type="date" name="next_step_date"></label>
+      <input type="url" name="document_url" placeholder="Link dos documentos"><input type="url" name="report_url" placeholder="Link dos relatórios">
+      <textarea name="notes" placeholder="Observações"></textarea><button class="btn btn-primary">Guardar registo</button>
+    </form><div id="project-record-feedback"></div></div>
+    <div class="split">
+      <div class="card"><h3>Registar despesa</h3><form id="project-expense-form" class="form-grid">
+        <select name="project_id" required><option value="">Seleccionar projecto</option>${projectOptions}</select>
+        <input type="date" name="expense_date" required><input name="category" placeholder="Categoria" required>
+        <input name="description" placeholder="Descrição" required><input type="number" name="amount" min="0.01" step="0.01" placeholder="Valor" required>
+        <select name="payment_method"><option value="">Método de pagamento</option><option value="cash">Dinheiro</option><option value="mpesa">M-Pesa</option><option value="emola">e-Mola</option><option value="bank_transfer">Transferência</option></select>
+        <input type="url" name="receipt_url" placeholder="Link do comprovativo"><textarea name="notes" placeholder="Observações"></textarea>
+        <button class="btn btn-primary">Guardar despesa</button></form><div id="project-expense-feedback"></div></div>
+      <div class="card"><h3>Nova etapa ou entrega</h3><form id="milestone-form" class="form-grid">
+        <select name="project_id" required><option value="">Seleccionar projecto</option>${projectOptions}</select>
+        <input name="title" placeholder="Etapa, entrega ou resultado" required><input type="date" name="due_date">
+        <input name="responsible_name" placeholder="Responsável"><select name="status"><option value="pending">Pendente</option><option value="in_progress">Em curso</option><option value="completed">Concluída</option><option value="delayed">Atrasada</option><option value="cancelled">Cancelada</option></select>
+        <input type="url" name="document_url" placeholder="Link do documento/relatório"><textarea name="notes" placeholder="Observações"></textarea>
+        <button class="btn btn-primary">Guardar etapa</button></form><div id="milestone-feedback"></div></div>
+    </div>
+    <div class="card"><h3>Projectos, parcerias e candidaturas</h3>${actionTable(['Tipo','Título','Financiador','Prazo','Orçamento','Aprovado','Responsável','Próximo passo','Estado','Acções'],(rows||[]).map(r=>[
+      ({execution:'Projecto',partnership:'Parceria',application:'Candidatura'})[r.record_type],r.title,r.funder||'-',r.deadline||r.end_date||'-',money(r.total_budget),money(r.approved_amount),r.responsible_name,r.next_step,r.status,actions('project_records',r.id,true)
+    ]))}</div>
+    <div class="split">
+      <div class="card"><h3>Despesas recentes</h3>${actionTable(['Data','Projecto','Categoria','Descrição','Valor','Comprovativo','Acções'],(expenses||[]).map(x=>[
+        x.expense_date,x.project_records?.title||'-',x.category,x.description,money(x.amount),x.receipt_url?`<a href="${x.receipt_url}" target="_blank">Abrir</a>`:'-',actions('project_expenses',x.id)
+      ]))}</div>
+      <div class="card"><h3>Etapas e entregas</h3>${actionTable(['Projecto','Etapa','Prazo','Responsável','Estado','Acções'],(milestones||[]).map(m=>[
+        m.project_records?.title||'-',m.title,m.due_date||'-',m.responsible_name||'-',m.status,actions('project_milestones',m.id,true)
+      ]))}</div>
+    </div></div>`;
+  document.querySelector('#project-record-form').addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);const{error}=await supabase.from('project_records').insert({record_type:fd.get('record_type'),title:fd.get('title'),funder:fd.get('funder')||null,country:fd.get('country')||null,responsible_name:fd.get('responsible_name'),partners_text:fd.get('partners_text')||null,beneficiaries:fd.get('beneficiaries')||null,start_date:fd.get('start_date')||null,end_date:fd.get('end_date')||null,deadline:fd.get('deadline')||null,total_budget:Number(fd.get('total_budget')||0),requested_amount:Number(fd.get('requested_amount')||0),approved_amount:Number(fd.get('approved_amount')||0),status:fd.get('status'),next_step:fd.get('next_step'),next_step_date:fd.get('next_step_date')||null,document_url:fd.get('document_url')||null,report_url:fd.get('report_url')||null,notes:fd.get('notes')||null,created_by:profile.id});if(error)return feedback(error.message,'project-record-feedback');await renderProjects();});
+  document.querySelector('#project-expense-form').addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);const{error}=await supabase.from('project_expenses').insert({project_id:fd.get('project_id'),expense_date:fd.get('expense_date'),category:fd.get('category'),description:fd.get('description'),amount:Number(fd.get('amount')),payment_method:fd.get('payment_method')||null,receipt_url:fd.get('receipt_url')||null,notes:fd.get('notes')||null,created_by:profile.id});if(error)return feedback(error.message,'project-expense-feedback');await renderProjects();});
+  document.querySelector('#milestone-form').addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);const{error}=await supabase.from('project_milestones').insert({project_id:fd.get('project_id'),title:fd.get('title'),due_date:fd.get('due_date')||null,responsible_name:fd.get('responsible_name')||null,status:fd.get('status'),document_url:fd.get('document_url')||null,notes:fd.get('notes')||null,created_by:profile.id});if(error)return feedback(error.message,'milestone-feedback');await renderProjects();});
   bindActions(renderProjects);
 }
 
@@ -255,13 +299,13 @@ const actions=(table,id,canToggle=false)=>`<div style="display:flex;gap:6px;whit
 function bindActions(rerender){
   document.querySelectorAll('[data-edit-table]').forEach(button=>button.addEventListener('click',async()=>{
     const table=button.dataset.editTable;
-    const field={partners:'full_name',institutional_transactions:'description',funding_opportunities:'title',department_records:'title',company_tasks:'title',artists:'artistic_name',artist_contracts:'commission_notes',artist_activities:'title'}[table];
+    const field={partners:'full_name',institutional_transactions:'description',funding_opportunities:'title',department_records:'title',company_tasks:'title',artists:'artistic_name',artist_contracts:'commission_notes',artist_activities:'title',project_records:'title',project_expenses:'description',project_milestones:'title'}[table];
     const{data,error:readError}=await supabase.from(table).select(field).eq('id',button.dataset.id).single();
     if(readError)return window.alert(readError.message);
     const value=window.prompt('Introduza o novo conteúdo:',data[field]);
     if(value===null||!value.trim())return;
     const updatePayload={[field]:value.trim()};
-    if(!['partners','company_tasks'].includes(table))updatePayload.updated_at=new Date().toISOString();
+    if(['institutional_transactions','funding_opportunities','department_records','artists','artist_contracts','artist_activities','project_records'].includes(table))updatePayload.updated_at=new Date().toISOString();
     const{error}=await supabase.from(table).update(updatePayload).eq('id',button.dataset.id);
     if(error)return window.alert(error.message);await rerender();
   }));
@@ -278,11 +322,16 @@ function bindActions(rerender){
       const{data}=await supabase.from(table).select('is_active').eq('id',button.dataset.id).single();value=!data.is_active;
     }else{
       const{data}=await supabase.from(table).select('status').eq('id',button.dataset.id).single();
-      const cycle={planned:'in_progress',identified:'preparing',preparing:'submitted',submitted:'approved',in_progress:'completed',completed:'planned',approved:'identified',rejected:'identified',cancelled:'planned'};
-      value=cycle[data.status]||'in_progress';
+      const cycles={
+        project_records:{identified:'preparing',preparing:'submitted',submitted:'approved',approved:'in_progress',in_progress:'completed',completed:'in_progress',suspended:'in_progress',rejected:'identified',cancelled:'identified'},
+        project_milestones:{pending:'in_progress',in_progress:'completed',completed:'pending',delayed:'in_progress',cancelled:'pending'},
+        funding_opportunities:{identified:'preparing',preparing:'submitted',submitted:'approved',approved:'identified',rejected:'identified'},
+        department_records:{planned:'in_progress',in_progress:'completed',completed:'planned',cancelled:'planned'},
+      };
+      value=cycles[table]?.[data.status]||data.status;
     }
     const updatePayload={[field]:value};
-    if(table!=='partners')updatePayload.updated_at=new Date().toISOString();
+    if(['institutional_transactions','funding_opportunities','department_records','artists','artist_contracts','artist_activities','project_records'].includes(table))updatePayload.updated_at=new Date().toISOString();
     const{error}=await supabase.from(table).update(updatePayload).eq('id',button.dataset.id);
     if(error)return window.alert(error.message);await rerender();
   }));
