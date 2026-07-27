@@ -48,6 +48,7 @@ async function renderDepartment(key) {
   if (key === 'direccao') return renderDirection();
   if (key === 'financeiro') return renderFinance();
   if (key === 'projectos') return renderProjects();
+  if (key === 'marketing') return renderMarketing();
   if (key === 'artistas') return renderArtists();
   if (key === 'avicultura') return renderPoultry();
   if (key === 'tarefas') return renderTasks();
@@ -210,6 +211,75 @@ async function renderArtists() {
   bindActions(renderArtists);
 }
 
+async function renderMarketing() {
+  const [{data:summary,error},{data:campaigns},{data:contents},{data:expenses},{data:resources}] = await Promise.all([
+    supabase.from('marketing_summary').select('*').single(),
+    supabase.from('marketing_campaigns').select('*').order('start_date',{ascending:false}),
+    supabase.from('marketing_content').select('*,marketing_campaigns(name)').order('planned_date',{ascending:true}),
+    supabase.from('marketing_expenses').select('*,marketing_campaigns(name)').order('expense_date',{ascending:false}).limit(30),
+    supabase.from('marketing_resources').select('*').order('name'),
+  ]);
+  if(error)return showError(error);
+  const campaignOptions=(campaigns||[]).map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  content.innerHTML=`<div class="grid gap-14">
+    <div class="dashboard-grid">${stat('Campanhas activas',summary.active_campaigns)}${stat('Publicações realizadas',summary.published_content)}
+      ${stat('Aguardam aprovação',summary.awaiting_approval)}${stat('Orçamento',money(summary.total_budget))}
+      ${stat('Despesas',money(summary.total_expenses))}${stat('Saldo disponível',money(summary.available_budget))}
+      ${stat('Alcance total',summary.total_reach)}${stat('Visualizações',summary.total_views)}</div>
+    <div class="card"><h3>Nova campanha</h3><form id="campaign-form" class="form-grid">
+      <input name="name" placeholder="Nome da campanha" required><input name="objective" placeholder="Objectivo" required>
+      <input name="target_audience" placeholder="Público-alvo"><input name="responsible_name" placeholder="Responsável">
+      <label>Data de início<input type="date" name="start_date"></label><label>Data de término<input type="date" name="end_date"></label>
+      <input type="number" name="budget" min="0" step="0.01" placeholder="Orçamento">
+      <select name="status"><option value="planned">Planeada</option><option value="active">Activa</option><option value="completed">Concluída</option><option value="cancelled">Cancelada</option></select>
+      <textarea name="notes" placeholder="Observações"></textarea><button class="btn btn-primary">Guardar campanha</button>
+    </form><div id="campaign-feedback"></div></div>
+    <div class="split">
+      <div class="card"><h3>Calendário de conteúdo</h3><form id="content-form" class="form-grid">
+        <select name="campaign_id"><option value="">Sem campanha</option>${campaignOptions}</select><input name="title" placeholder="Título do conteúdo" required>
+        <select name="content_type"><option value="post">Publicação</option><option value="video">Vídeo</option><option value="story">Story</option><option value="press_release">Comunicado de imprensa</option><option value="newsletter">Newsletter</option><option value="article">Artigo</option><option value="design">Material gráfico</option><option value="other">Outro</option></select>
+        <input name="channel" placeholder="Canal: Instagram, Facebook, imprensa…" required><label>Data prevista<input type="date" name="planned_date"></label>
+        <textarea name="copy_text" placeholder="Texto/legenda"></textarea><input type="url" name="asset_url" placeholder="Link do material">
+        <select name="approval_status"><option value="draft">Rascunho</option><option value="review">Para aprovação da administradora</option><option value="approved">Aprovado</option><option value="published">Publicado</option></select>
+        <button class="btn btn-primary">Guardar conteúdo</button></form><div id="content-feedback"></div></div>
+      <div class="card"><h3>Despesa de comunicação</h3><form id="marketing-expense-form" class="form-grid">
+        <select name="campaign_id"><option value="">Sem campanha</option>${campaignOptions}</select><input type="date" name="expense_date" required>
+        <input name="category" placeholder="Categoria" required><input name="description" placeholder="Descrição" required>
+        <input type="number" name="amount" min="0.01" step="0.01" placeholder="Valor" required>
+        <input type="url" name="receipt_url" placeholder="Link do comprovativo"><textarea name="notes" placeholder="Observações"></textarea>
+        <button class="btn btn-primary">Guardar despesa</button></form><div id="marketing-expense-feedback"></div>
+        <hr><h3>Imprensa ou material</h3><form id="resource-form" class="form-grid">
+        <select name="resource_type"><option value="media_contact">Contacto de imprensa</option><option value="brand_asset">Material de identidade visual</option><option value="supplier">Fornecedor</option><option value="other">Outro</option></select>
+        <input name="name" placeholder="Nome" required><input name="organisation" placeholder="Órgão/organização">
+        <input type="email" name="email" placeholder="Email"><input name="phone" placeholder="Telefone"><input type="url" name="url" placeholder="Link do material/site">
+        <textarea name="notes" placeholder="Observações"></textarea><button class="btn btn-primary">Guardar recurso</button></form><div id="resource-feedback"></div></div>
+    </div>
+    <div class="card"><h3>Campanhas</h3>${actionTable(['Campanha','Objectivo','Período','Orçamento','Responsável','Estado','Acções'],(campaigns||[]).map(c=>[
+      c.name,c.objective,`${c.start_date||'-'} — ${c.end_date||'-'}`,money(c.budget),c.responsible_name||'-',c.status,actions('marketing_campaigns',c.id,true)
+    ]))}</div>
+    <div class="card"><h3>Conteúdos e aprovação</h3>${actionTable(['Data','Campanha','Conteúdo','Canal','Estado','Alcance','Visualizações','Acções'],(contents||[]).map(c=>[
+      c.planned_date||'-',c.marketing_campaigns?.name||'-',c.title,c.channel,
+      `<select data-content-status="${c.id}"><option value="draft" ${c.approval_status==='draft'?'selected':''}>Rascunho</option><option value="review" ${c.approval_status==='review'?'selected':''}>Em revisão</option><option value="approved" ${c.approval_status==='approved'?'selected':''}>Aprovado</option><option value="rejected" ${c.approval_status==='rejected'?'selected':''}>Rejeitado</option><option value="published" ${c.approval_status==='published'?'selected':''}>Publicado</option></select>`,
+      `<input data-metric="reach" data-id="${c.id}" type="number" min="0" value="${c.reach}" style="width:100px">`,
+      `<input data-metric="views" data-id="${c.id}" type="number" min="0" value="${c.views}" style="width:100px">`,actions('marketing_content',c.id)
+    ]))}</div>
+    <div class="split">
+      <div class="card"><h3>Despesas</h3>${actionTable(['Data','Campanha','Categoria','Valor','Comprovativo','Acções'],(expenses||[]).map(x=>[
+        x.expense_date,x.marketing_campaigns?.name||'-',x.category,money(x.amount),x.receipt_url?`<a href="${x.receipt_url}" target="_blank">Abrir</a>`:'-',actions('marketing_expenses',x.id)
+      ]))}</div>
+      <div class="card"><h3>Imprensa e materiais</h3>${actionTable(['Tipo','Nome','Organização','Contacto/Link','Acções'],(resources||[]).map(r=>[
+        r.resource_type,r.name,r.organisation||'-',r.url?`<a href="${r.url}" target="_blank">Abrir</a>`:(r.email||r.phone||'-'),actions('marketing_resources',r.id)
+      ]))}</div>
+    </div></div>`;
+  document.querySelector('#campaign-form').addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);const{error}=await supabase.from('marketing_campaigns').insert({name:fd.get('name'),objective:fd.get('objective'),target_audience:fd.get('target_audience')||null,responsible_name:fd.get('responsible_name')||null,start_date:fd.get('start_date')||null,end_date:fd.get('end_date')||null,budget:Number(fd.get('budget')||0),status:fd.get('status'),notes:fd.get('notes')||null,created_by:profile.id});if(error)return feedback(error.message,'campaign-feedback');await renderMarketing();});
+  document.querySelector('#content-form').addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);const status=fd.get('approval_status');const{error}=await supabase.from('marketing_content').insert({campaign_id:fd.get('campaign_id')||null,title:fd.get('title'),content_type:fd.get('content_type'),channel:fd.get('channel'),planned_date:fd.get('planned_date')||null,copy_text:fd.get('copy_text')||null,asset_url:fd.get('asset_url')||null,approval_status:status,approved_by:['approved','published'].includes(status)?profile.id:null,approved_at:['approved','published'].includes(status)?new Date().toISOString():null,created_by:profile.id});if(error)return feedback(error.message,'content-feedback');await renderMarketing();});
+  document.querySelector('#marketing-expense-form').addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);const{error}=await supabase.from('marketing_expenses').insert({campaign_id:fd.get('campaign_id')||null,expense_date:fd.get('expense_date'),category:fd.get('category'),description:fd.get('description'),amount:Number(fd.get('amount')),receipt_url:fd.get('receipt_url')||null,notes:fd.get('notes')||null,created_by:profile.id});if(error)return feedback(error.message,'marketing-expense-feedback');await renderMarketing();});
+  document.querySelector('#resource-form').addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);const{error}=await supabase.from('marketing_resources').insert({resource_type:fd.get('resource_type'),name:fd.get('name'),organisation:fd.get('organisation')||null,email:fd.get('email')||null,phone:fd.get('phone')||null,url:fd.get('url')||null,notes:fd.get('notes')||null,created_by:profile.id});if(error)return feedback(error.message,'resource-feedback');await renderMarketing();});
+  document.querySelectorAll('[data-content-status]').forEach(select=>select.addEventListener('change',async()=>{const approved=['approved','published'].includes(select.value);const payload={approval_status:select.value,approved_by:approved?profile.id:null,approved_at:approved?new Date().toISOString():null,updated_at:new Date().toISOString()};if(select.value==='published')payload.published_date=new Date().toISOString().slice(0,10);const{error}=await supabase.from('marketing_content').update(payload).eq('id',select.dataset.contentStatus);if(error)window.alert(error.message);await renderMarketing();}));
+  document.querySelectorAll('[data-metric]').forEach(input=>input.addEventListener('change',async()=>{const{error}=await supabase.from('marketing_content').update({[input.dataset.metric]:Number(input.value||0),updated_at:new Date().toISOString()}).eq('id',input.dataset.id);if(error)window.alert(error.message);}));
+  bindActions(renderMarketing);
+}
+
 async function renderProjects() {
   const [{data:summary,error},{data:rows},{data:expenses},{data:milestones}] = await Promise.all([
     supabase.from('projects_summary').select('*').single(),
@@ -299,13 +369,13 @@ const actions=(table,id,canToggle=false)=>`<div style="display:flex;gap:6px;whit
 function bindActions(rerender){
   document.querySelectorAll('[data-edit-table]').forEach(button=>button.addEventListener('click',async()=>{
     const table=button.dataset.editTable;
-    const field={partners:'full_name',institutional_transactions:'description',funding_opportunities:'title',department_records:'title',company_tasks:'title',artists:'artistic_name',artist_contracts:'commission_notes',artist_activities:'title',project_records:'title',project_expenses:'description',project_milestones:'title'}[table];
+    const field={partners:'full_name',institutional_transactions:'description',funding_opportunities:'title',department_records:'title',company_tasks:'title',artists:'artistic_name',artist_contracts:'commission_notes',artist_activities:'title',project_records:'title',project_expenses:'description',project_milestones:'title',marketing_campaigns:'name',marketing_content:'title',marketing_expenses:'description',marketing_resources:'name'}[table];
     const{data,error:readError}=await supabase.from(table).select(field).eq('id',button.dataset.id).single();
     if(readError)return window.alert(readError.message);
     const value=window.prompt('Introduza o novo conteúdo:',data[field]);
     if(value===null||!value.trim())return;
     const updatePayload={[field]:value.trim()};
-    if(['institutional_transactions','funding_opportunities','department_records','artists','artist_contracts','artist_activities','project_records'].includes(table))updatePayload.updated_at=new Date().toISOString();
+    if(['institutional_transactions','funding_opportunities','department_records','artists','artist_contracts','artist_activities','project_records','marketing_campaigns','marketing_content'].includes(table))updatePayload.updated_at=new Date().toISOString();
     const{error}=await supabase.from(table).update(updatePayload).eq('id',button.dataset.id);
     if(error)return window.alert(error.message);await rerender();
   }));
@@ -327,11 +397,12 @@ function bindActions(rerender){
         project_milestones:{pending:'in_progress',in_progress:'completed',completed:'pending',delayed:'in_progress',cancelled:'pending'},
         funding_opportunities:{identified:'preparing',preparing:'submitted',submitted:'approved',approved:'identified',rejected:'identified'},
         department_records:{planned:'in_progress',in_progress:'completed',completed:'planned',cancelled:'planned'},
+        marketing_campaigns:{planned:'active',active:'completed',completed:'planned',cancelled:'planned'},
       };
       value=cycles[table]?.[data.status]||data.status;
     }
     const updatePayload={[field]:value};
-    if(['institutional_transactions','funding_opportunities','department_records','artists','artist_contracts','artist_activities','project_records'].includes(table))updatePayload.updated_at=new Date().toISOString();
+    if(['institutional_transactions','funding_opportunities','department_records','artists','artist_contracts','artist_activities','project_records','marketing_campaigns','marketing_content'].includes(table))updatePayload.updated_at=new Date().toISOString();
     const{error}=await supabase.from(table).update(updatePayload).eq('id',button.dataset.id);
     if(error)return window.alert(error.message);await rerender();
   }));
