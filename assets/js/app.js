@@ -20,7 +20,7 @@ function openGeneralManagement() {
     window.alert('A Gestão Geral da JENI está disponível apenas para perfis com a função admin.');
     return;
   }
-  window.location.hash = '#/gestao-geral';
+  window.location.href = './gestao.html';
 }
 
 brand?.addEventListener('dblclick', openGeneralManagement);
