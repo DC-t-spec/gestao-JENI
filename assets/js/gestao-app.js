@@ -552,7 +552,7 @@ function reportDates(period,start,end){
 async function renderGeneralReport(filters={period:'monthly'}) {
   const range=reportDates(filters.period,filters.start,filters.end);
   const [{data:finance},{data:projects},{data:marketing},{data:artists},{data:poultry},{data:eggs},{data:tasks},{data:hr},{data:transactions},{data:projectRows},{data:campaigns},{data:activities}] = await Promise.all([
-    supabase.from('finance_summary').select('*').single(),supabase.from('project_management_summary').select('*').single(),
+    supabase.from('finance_summary').select('*').single(),supabase.from('projects_summary').select('*').single(),
     supabase.from('marketing_summary').select('*').single(),supabase.from('artist_agency_summary').select('*').single(),
     supabase.from('dashboard_summary').select('*').single(),supabase.from('egg_business_summary').select('*').single(),
     supabase.from('tasks_agenda_summary').select('*').single(),supabase.from('hr_summary').select('*').single(),
@@ -584,12 +584,12 @@ async function renderGeneralReport(filters={period:'monthly'}) {
         ${stat('Saldo geral',money(finance?.total_balance))}${stat('A receber',money(finance?.total_receivable))}${stat('A pagar',money(finance?.total_payable))}${stat('Orçamento disponível',money(finance?.available_budget))}
       </div>${simpleTable(['Data','Tipo','Categoria','Descrição','Valor'],tx.slice(0,30).map(t=>[t.transaction_date,t.direction==='income'?'Receita':'Despesa',t.category,t.description,money(t.amount)]))}</section>
       <section class="report-section"><h3>3. Projectos e candidaturas</h3><div class="dashboard-grid">
-        ${stat('Projectos activos',projects?.active_projects||0)}${stat('Candidaturas em preparação',projects?.applications_preparing||0)}${stat('Orçamento aprovado',money(projects?.approved_budget))}${stat('Despesas',money(projects?.total_expenses))}
-      </div>${simpleTable(['Projecto/candidatura','Tipo','Responsável','Prazo','Estado'],pRows.slice(0,25).map(p=>[p.title,p.record_type||'-',p.responsible_name||'-',p.due_date||'-',p.status]))}</section>
+        ${stat('Projectos activos',projects?.active_projects||0)}${stat('Candidaturas em preparação',projects?.active_applications||0)}${stat('Orçamento aprovado',money(projects?.approved_funding))}${stat('Despesas',money(projects?.total_expenses))}
+      </div>${simpleTable(['Projecto/candidatura','Tipo','Responsável','Prazo','Estado'],pRows.slice(0,25).map(p=>[p.title,p.record_type||'-',p.responsible_name||'-',p.deadline||p.end_date||'-',p.status]))}</section>
       <section class="report-section"><h3>4. Marketing e Comunicação</h3><div class="dashboard-grid">
         ${stat('Campanhas activas',marketing?.active_campaigns||0)}${stat('Publicações',marketing?.published_content||0)}${stat('Alcance',marketing?.total_reach||0)}${stat('Visualizações',marketing?.total_views||0)}
         ${stat('Orçamento',money(marketing?.total_budget))}${stat('Despesas',money(marketing?.total_expenses))}
-      </div>${simpleTable(['Campanha','Objectivo','Período','Orçamento','Estado'],cRows.slice(0,20).map(c=>[c.name,c.objective,c.start_date||'-'+' a '+(c.end_date||'-'),money(c.budget),c.status]))}</section>
+      </div>${simpleTable(['Campanha','Objectivo','Período','Orçamento','Estado'],cRows.slice(0,20).map(c=>[c.name,c.objective,`${c.start_date||'-'} a ${c.end_date||'-'}`,money(c.budget),c.status]))}</section>
       <section class="report-section"><h3>5. Agência de Artistas</h3><div class="dashboard-grid">
         ${stat('Artistas activos',artists?.active_artists||0)}${stat('Contratos activos',artists?.active_contracts||0)}${stat('Receita bruta',money(artists?.gross_income))}${stat('Ganho da JENI',money(artists?.jeni_income))}
       </div>${simpleTable(['Data','Artista','Actividade','Bruto','Ganho JENI'],(activities||[]).slice(0,25).map(a=>[a.activity_date,a.artists?.artistic_name||'-',a.title,money(a.gross_amount),money(a.jeni_income)]))}</section>
