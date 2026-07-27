@@ -561,7 +561,7 @@ function bindActions(rerender){
   }));
   document.querySelectorAll('[data-toggle-table]').forEach(button=>button.addEventListener('click',async()=>{
     const table=button.dataset.toggleTable;
-    const field=table==='partners'?'is_active':'status';
+    const field=['partners','finance_accounts'].includes(table)?'is_active':'status';
     let value;
     if(table==='finance_accounts'){const{data}=await supabase.from(table).select('is_active').eq('id',button.dataset.id).single();value=!data.is_active;
     }else if(table==='partners'){
