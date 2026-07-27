@@ -123,8 +123,8 @@ async function renderFinance() {
     supabase.from('company_projects').select('id,project_name').order('project_name'),
     supabase.from('institutional_transactions').select('*').order('transaction_date',{ascending:false}).limit(50),
     supabase.from('finance_obligations').select('*').order('due_date').limit(50),
-    supabase.from('finance_budgets').select('*').order('period_start',{ascending:false}).limit(30),
-    supabase.from('finance_transfers').select('*').order('transfer_date',{ascending:false}).limit(30),
+    supabase.from('finance_budget_execution').select('*').order('period_start',{ascending:false}).limit(30),
+    supabase.from('finance_transfers_display').select('*').order('transfer_date',{ascending:false}).limit(30),
     supabase.from('finance_advances').select('*').order('request_date',{ascending:false}).limit(30)
   ]);
   if(error)return showError(error);
