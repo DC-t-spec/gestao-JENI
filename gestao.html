@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gestão Geral — JENI Empreendimentos</title>
+  <link rel="stylesheet" href="./assets/css/tokens.css">
+  <link rel="stylesheet" href="./assets/css/base.css">
+  <link rel="stylesheet" href="./assets/css/components.css">
+  <link rel="stylesheet" href="./assets/css/modules.css">
+  <link rel="stylesheet" href="./assets/css/gestao.css">
+</head>
+<body>
+  <div id="management-loading" class="management-gate">A verificar acesso…</div>
+  <div id="management-denied" class="management-gate" hidden>
+    <div class="card"><h2>Acesso restrito</h2><p>Esta área é exclusiva para administradores.</p>
+      <a class="btn btn-primary" href="./index.html">Voltar ao JENI Frangos</a></div>
+  </div>
+  <div id="management-app" class="management-shell" hidden>
+    <aside class="management-sidebar">
+      <div class="management-brand"><small>JENI EMPREENDIMENTOS</small><strong>Gestão Geral</strong></div>
+      <nav id="department-nav" class="management-nav">
+        <button data-department="direccao" class="active">Direcção e Administração</button>
+        <button data-department="financeiro">Financeiro</button>
+        <button data-department="projectos">Projectos e Candidaturas</button>
+        <button data-department="marketing">Marketing e Comunicação</button>
+        <button data-department="artistas">Agência de Artistas</button>
+        <button data-department="avicultura">Avicultura</button>
+        <button data-department="tarefas">Tarefas e Agenda</button>
+        <button data-department="recursos-humanos">Recursos Humanos</button>
+      </nav>
+      <a class="management-back" href="./index.html">← JENI Frangos</a>
+    </aside>
+    <main class="management-main">
+      <header class="management-topbar">
+        <div><p class="eyebrow">PAINEL INSTITUCIONAL</p><h1 id="department-title">Direcção e Administração</h1>
+          <p id="department-subtitle">Visão executiva e registos institucionais</p></div>
+        <div><span id="management-user"></span><button id="management-logout" class="btn btn-secondary">Sair</button></div>
+      </header>
+      <section id="management-content"></section>
+    </main>
+  </div>
+  <script type="module" src="./assets/js/gestao-app.js?v=1"></script>
+</body>
+</html>
