@@ -16,6 +16,11 @@ const app = document.querySelector('#management-app');
 const content = document.querySelector('#management-content');
 let profile;
 
+function validIdentity(value) {
+  const text = String(value ?? '').trim();
+  return text && !['null', 'undefined'].includes(text.toLowerCase()) ? text : '';
+}
+
 async function init() {
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.user) return window.location.replace('./index.html');
@@ -24,7 +29,11 @@ async function init() {
   loading.hidden = true;
   if (profile?.role !== 'admin') { denied.hidden = false; return; }
   app.hidden = false;
-  document.querySelector('#management-user').textContent = profile.full_name || profile.email || session.user.email || 'Administradora';
+  document.querySelector('#management-user').textContent =
+    validIdentity(profile.full_name) ||
+    validIdentity(profile.email) ||
+    validIdentity(session.user.email) ||
+    'Administradora';
   document.querySelectorAll('[data-department]').forEach(button => button.addEventListener('click', () => renderDepartment(button.dataset.department)));
   document.querySelector('#management-logout').addEventListener('click', async () => { await supabase.auth.signOut(); window.location.replace('./index.html'); });
   await renderDepartment(location.hash.replace('#','') || 'direccao');
