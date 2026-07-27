@@ -52,6 +52,7 @@ async function renderDepartment(key) {
   if (key === 'artistas') return renderArtists();
   if (key === 'avicultura') return renderPoultry();
   if (key === 'tarefas') return renderTasks();
+  if (key === 'recursos-humanos') return renderHumanResources();
   return renderRecords(key);
 }
 
@@ -341,6 +342,83 @@ async function renderProjects() {
   bindActions(renderProjects);
 }
 
+async function renderHumanResources() {
+  const [{data:s,error},{data:employees},{data:contracts},{data:absences},{data:reviews},{data:trainings},{data:movements},{data:documents}] = await Promise.all([
+    supabase.from('hr_summary').select('*').single(),
+    supabase.from('hr_employees').select('*').order('full_name'),
+    supabase.from('hr_contracts').select('*,hr_employees(full_name)').order('end_date'),
+    supabase.from('hr_absences').select('*,hr_employees(full_name)').order('start_date',{ascending:false}),
+    supabase.from('hr_reviews').select('*,hr_employees(full_name)').order('review_date',{ascending:false}),
+    supabase.from('hr_trainings').select('*,hr_employees(full_name)').order('training_date',{ascending:false}),
+    supabase.from('hr_movements').select('*,hr_employees(full_name)').order('movement_date',{ascending:false}),
+    supabase.from('hr_documents').select('*,hr_employees(full_name)').order('created_at',{ascending:false})
+  ]);
+  if(error)return showError(error);
+  const opts=(employees||[]).filter(e=>e.status==='active').map(e=>`<option value="${e.id}">${e.full_name}</option>`).join('');
+  content.innerHTML=`<div class="grid gap-14">
+    <div class="dashboard-grid">${stat('Colaboradores activos',s.active_employees)}${stat('Contratos a terminar (60 dias)',s.expiring_contracts)}
+      ${stat('Férias e ausências actuais',s.current_absences)}${stat('Aniversários do mês',s.birthdays_month)}
+      ${stat('Avaliações pendentes',s.pending_reviews)}${stat('Formações pendentes',s.pending_trainings)}</div>
+    <div class="card"><h3>Cadastrar colaborador</h3><form id="hr-employee-form" class="form-grid">
+      <input name="full_name" placeholder="Nome completo" required><input name="employee_number" placeholder="Número do colaborador">
+      <input type="date" name="birth_date" title="Data de nascimento"><select name="gender"><option value="">Género</option><option value="female">Feminino</option><option value="male">Masculino</option><option value="other">Outro</option></select>
+      <input name="phone" placeholder="Telefone"><input type="email" name="email" placeholder="Email">
+      <input name="address" placeholder="Endereço"><input name="emergency_contact" placeholder="Contacto de emergência">
+      <input name="department" placeholder="Departamento" required><input name="job_title" placeholder="Cargo" required>
+      <input type="date" name="hire_date" title="Data de admissão" required><select name="employment_type"><option value="employee">Efectivo</option><option value="fixed_term">Prazo certo</option><option value="intern">Estagiário</option><option value="consultant">Consultor</option><option value="volunteer">Voluntário</option></select>
+      <input type="number" name="base_salary" min="0" step="0.01" placeholder="Salário base"><input name="nuit" placeholder="NUIT">
+      <input name="bank_details" placeholder="Dados bancários"><textarea name="notes" placeholder="Observações"></textarea>
+      <button class="btn btn-primary">Guardar colaborador</button></form><div id="hr-employee-feedback"></div></div>
+    <div class="split">
+      <div class="card"><h3>Contrato</h3><form id="hr-contract-form" class="form-grid">
+        <select name="employee_id" required><option value="">Colaborador</option>${opts}</select><select name="contract_type"><option value="permanent">Sem termo</option><option value="fixed_term">Prazo certo</option><option value="internship">Estágio</option><option value="consultancy">Consultoria</option><option value="other">Outro</option></select>
+        <input type="date" name="start_date" required><input type="date" name="end_date"><input type="number" name="salary" min="0" step="0.01" placeholder="Salário">
+        <input type="url" name="document_url" placeholder="Link do contrato"><select name="status"><option value="active">Activo</option><option value="pending">Pendente</option><option value="ended">Terminado</option><option value="cancelled">Cancelado</option></select>
+        <textarea name="notes" placeholder="Condições/observações"></textarea><button class="btn btn-primary">Guardar contrato</button></form><div id="hr-contract-feedback"></div></div>
+      <div class="card"><h3>Férias, falta ou licença</h3><form id="hr-absence-form" class="form-grid">
+        <select name="employee_id" required><option value="">Colaborador</option>${opts}</select><select name="absence_type"><option value="vacation">Férias</option><option value="sick_leave">Baixa médica</option><option value="justified_absence">Falta justificada</option><option value="unjustified_absence">Falta injustificada</option><option value="maternity">Licença de maternidade</option><option value="other">Outra</option></select>
+        <input type="date" name="start_date" required><input type="date" name="end_date" required><select name="status"><option value="requested">Solicitada</option><option value="approved">Aprovada</option><option value="rejected">Rejeitada</option><option value="completed">Concluída</option></select>
+        <input type="url" name="document_url" placeholder="Comprovativo/documento"><textarea name="notes" placeholder="Observações"></textarea><button class="btn btn-primary">Guardar ausência</button></form><div id="hr-absence-feedback"></div></div>
+    </div>
+    <div class="split">
+      <div class="card"><h3>Avaliação de desempenho</h3><form id="hr-review-form" class="form-grid">
+        <select name="employee_id" required><option value="">Colaborador</option>${opts}</select><input type="date" name="review_date" required><input name="reviewer_name" placeholder="Avaliador" required>
+        <input type="number" name="score" min="0" max="100" placeholder="Pontuação (0–100)"><input type="date" name="next_review_date" title="Próxima avaliação">
+        <textarea name="strengths" placeholder="Pontos fortes"></textarea><textarea name="improvements" placeholder="Pontos a melhorar e metas"></textarea><button class="btn btn-primary">Guardar avaliação</button></form><div id="hr-review-feedback"></div></div>
+      <div class="card"><h3>Formação</h3><form id="hr-training-form" class="form-grid">
+        <select name="employee_id" required><option value="">Colaborador</option>${opts}</select><input name="title" placeholder="Formação" required><input name="provider" placeholder="Entidade formadora">
+        <input type="date" name="training_date"><input type="number" name="cost" min="0" step="0.01" placeholder="Custo"><select name="status"><option value="planned">Planeada</option><option value="in_progress">Em curso</option><option value="completed">Concluída</option><option value="cancelled">Cancelada</option></select>
+        <input type="url" name="certificate_url" placeholder="Certificado/documento"><textarea name="notes" placeholder="Objectivos/observações"></textarea><button class="btn btn-primary">Guardar formação</button></form><div id="hr-training-feedback"></div></div>
+    </div>
+    <div class="split">
+      <div class="card"><h3>Movimento de pessoal</h3><form id="hr-movement-form" class="form-grid">
+        <select name="employee_id" required><option value="">Colaborador</option>${opts}</select><select name="movement_type"><option value="admission">Admissão/integração</option><option value="renewal">Renovação</option><option value="promotion">Promoção</option><option value="job_change">Mudança de cargo</option><option value="warning">Advertência</option><option value="disciplinary">Processo disciplinar</option><option value="termination">Saída/rescisão</option></select>
+        <input type="date" name="movement_date" required><input name="previous_position" placeholder="Cargo anterior"><input name="new_position" placeholder="Novo cargo">
+        <input type="url" name="document_url" placeholder="Documento"><textarea name="reason" placeholder="Motivo/decisão" required></textarea><button class="btn btn-primary">Guardar movimento</button></form><div id="hr-movement-feedback"></div></div>
+      <div class="card"><h3>Documento do colaborador</h3><form id="hr-document-form" class="form-grid">
+        <select name="employee_id" required><option value="">Colaborador</option>${opts}</select><input name="document_type" placeholder="Tipo de documento" required><input name="title" placeholder="Título" required>
+        <input type="date" name="expiry_date" title="Validade"><input type="url" name="document_url" placeholder="Link do documento" required><textarea name="notes" placeholder="Observações"></textarea>
+        <button class="btn btn-primary">Guardar documento</button></form><div id="hr-document-feedback"></div></div>
+    </div>
+    <div class="card"><h3>Colaboradores</h3>${actionTable(['Nome','Departamento','Cargo','Admissão','Salário','Estado','Acções'],(employees||[]).map(e=>[e.full_name,e.department,e.job_title,e.hire_date,money(e.base_salary),e.status,actions('hr_employees',e.id,true)]))}</div>
+    <div class="card"><h3>Contratos</h3>${actionTable(['Colaborador','Tipo','Início','Fim','Salário','Estado','Acções'],(contracts||[]).map(r=>[r.hr_employees?.full_name||'-',r.contract_type,r.start_date,r.end_date||'-',money(r.salary),r.status,actions('hr_contracts',r.id)]))}</div>
+    <div class="card"><h3>Férias e ausências</h3>${actionTable(['Colaborador','Tipo','Início','Fim','Estado','Acções'],(absences||[]).map(r=>[r.hr_employees?.full_name||'-',r.absence_type,r.start_date,r.end_date,r.status,actions('hr_absences',r.id)]))}</div>
+    <div class="card"><h3>Avaliações e formações</h3>${simpleTable(['Colaborador','Registo','Data','Estado/Resultado'],[...(reviews||[]).map(r=>[r.hr_employees?.full_name||'-','Avaliação',r.review_date,r.score===null?'-':r.score+'/100']),...(trainings||[]).map(r=>[r.hr_employees?.full_name||'-',r.title,r.training_date||'-',r.status])])}</div>
+    <div class="card"><h3>Movimentos e documentos</h3>${actionTable(['Colaborador','Tipo','Data/validade','Descrição','Acções'],[...(movements||[]).map(r=>[r.hr_employees?.full_name||'-',r.movement_type,r.movement_date,r.reason,actions('hr_movements',r.id)]),...(documents||[]).map(r=>[r.hr_employees?.full_name||'-',r.document_type,r.expiry_date||'-',r.title,actions('hr_documents',r.id)])])}</div>
+  </div>`;
+  const forms=[
+    ['#hr-employee-form','hr_employees',fd=>({full_name:fd.get('full_name'),employee_number:fd.get('employee_number')||null,birth_date:fd.get('birth_date')||null,gender:fd.get('gender')||null,phone:fd.get('phone')||null,email:fd.get('email')||null,address:fd.get('address')||null,emergency_contact:fd.get('emergency_contact')||null,department:fd.get('department'),job_title:fd.get('job_title'),hire_date:fd.get('hire_date'),employment_type:fd.get('employment_type'),base_salary:Number(fd.get('base_salary')||0),nuit:fd.get('nuit')||null,bank_details:fd.get('bank_details')||null,notes:fd.get('notes')||null,created_by:profile.id}),'hr-employee-feedback'],
+    ['#hr-contract-form','hr_contracts',fd=>({employee_id:fd.get('employee_id'),contract_type:fd.get('contract_type'),start_date:fd.get('start_date'),end_date:fd.get('end_date')||null,salary:Number(fd.get('salary')||0),document_url:fd.get('document_url')||null,status:fd.get('status'),notes:fd.get('notes')||null,created_by:profile.id}),'hr-contract-feedback'],
+    ['#hr-absence-form','hr_absences',fd=>({employee_id:fd.get('employee_id'),absence_type:fd.get('absence_type'),start_date:fd.get('start_date'),end_date:fd.get('end_date'),status:fd.get('status'),document_url:fd.get('document_url')||null,notes:fd.get('notes')||null,created_by:profile.id}),'hr-absence-feedback'],
+    ['#hr-review-form','hr_reviews',fd=>({employee_id:fd.get('employee_id'),review_date:fd.get('review_date'),reviewer_name:fd.get('reviewer_name'),score:fd.get('score')?Number(fd.get('score')):null,next_review_date:fd.get('next_review_date')||null,strengths:fd.get('strengths')||null,improvements:fd.get('improvements')||null,created_by:profile.id}),'hr-review-feedback'],
+    ['#hr-training-form','hr_trainings',fd=>({employee_id:fd.get('employee_id'),title:fd.get('title'),provider:fd.get('provider')||null,training_date:fd.get('training_date')||null,cost:Number(fd.get('cost')||0),status:fd.get('status'),certificate_url:fd.get('certificate_url')||null,notes:fd.get('notes')||null,created_by:profile.id}),'hr-training-feedback'],
+    ['#hr-movement-form','hr_movements',fd=>({employee_id:fd.get('employee_id'),movement_type:fd.get('movement_type'),movement_date:fd.get('movement_date'),previous_position:fd.get('previous_position')||null,new_position:fd.get('new_position')||null,document_url:fd.get('document_url')||null,reason:fd.get('reason'),created_by:profile.id}),'hr-movement-feedback'],
+    ['#hr-document-form','hr_documents',fd=>({employee_id:fd.get('employee_id'),document_type:fd.get('document_type'),title:fd.get('title'),expiry_date:fd.get('expiry_date')||null,document_url:fd.get('document_url'),notes:fd.get('notes')||null,created_by:profile.id}),'hr-document-feedback']
+  ];
+  forms.forEach(([selector,table,payload,id])=>document.querySelector(selector).addEventListener('submit',async e=>{e.preventDefault();const{error}=await supabase.from(table).insert(payload(new FormData(e.currentTarget)));if(error)return feedback(error.message,id);await renderHumanResources();}));
+  bindActions(renderHumanResources);
+}
+
 async function renderTasks() {
   const [{data:summary,error},{data:tasks},{data:users},{data:events},{data:comments},{data:projects},{data:artists},{data:campaigns}] = await Promise.all([
     supabase.from('tasks_agenda_summary').select('*').single(),
@@ -408,13 +486,13 @@ const actions=(table,id,canToggle=false)=>`<div style="display:flex;gap:6px;whit
 function bindActions(rerender){
   document.querySelectorAll('[data-edit-table]').forEach(button=>button.addEventListener('click',async()=>{
     const table=button.dataset.editTable;
-    const field={partners:'full_name',institutional_transactions:'description',funding_opportunities:'title',department_records:'title',company_tasks:'title',artists:'artistic_name',artist_contracts:'commission_notes',artist_activities:'title',project_records:'title',project_expenses:'description',project_milestones:'title',marketing_campaigns:'name',marketing_content:'title',marketing_expenses:'description',marketing_resources:'name',agenda_events:'title'}[table];
+    const field={partners:'full_name',institutional_transactions:'description',funding_opportunities:'title',department_records:'title',company_tasks:'title',artists:'artistic_name',artist_contracts:'commission_notes',artist_activities:'title',project_records:'title',project_expenses:'description',project_milestones:'title',marketing_campaigns:'name',marketing_content:'title',marketing_expenses:'description',marketing_resources:'name',agenda_events:'title',hr_employees:'full_name',hr_contracts:'contract_type',hr_absences:'absence_type',hr_movements:'reason',hr_documents:'title'}[table];
     const{data,error:readError}=await supabase.from(table).select(field).eq('id',button.dataset.id).single();
     if(readError)return window.alert(readError.message);
     const value=window.prompt('Introduza o novo conteúdo:',data[field]);
     if(value===null||!value.trim())return;
     const updatePayload={[field]:value.trim()};
-    if(['institutional_transactions','funding_opportunities','department_records','artists','artist_contracts','artist_activities','project_records','marketing_campaigns','marketing_content','agenda_events'].includes(table))updatePayload.updated_at=new Date().toISOString();
+    if(['institutional_transactions','funding_opportunities','department_records','artists','artist_contracts','artist_activities','project_records','marketing_campaigns','marketing_content','agenda_events','hr_employees'].includes(table))updatePayload.updated_at=new Date().toISOString();
     const{error}=await supabase.from(table).update(updatePayload).eq('id',button.dataset.id);
     if(error)return window.alert(error.message);await rerender();
   }));
@@ -437,6 +515,7 @@ function bindActions(rerender){
         funding_opportunities:{identified:'preparing',preparing:'submitted',submitted:'approved',approved:'identified',rejected:'identified'},
         department_records:{planned:'in_progress',in_progress:'completed',completed:'planned',cancelled:'planned'},
         marketing_campaigns:{planned:'active',active:'completed',completed:'planned',cancelled:'planned'},
+        hr_employees:{active:'inactive',inactive:'active',on_leave:'active',terminated:'inactive'},
       };
       value=cycles[table]?.[data.status]||data.status;
     }
