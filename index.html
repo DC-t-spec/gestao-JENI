@@ -4,7 +4,6 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>JENI FRANGOS</title>
-
   <link rel="stylesheet" href="./assets/css/tokens.css" />
   <link rel="stylesheet" href="./assets/css/base.css" />
   <link rel="stylesheet" href="./assets/css/layout.css" />
@@ -14,62 +13,46 @@
 <body>
   <div id="auth-view" class="auth-container">
     <div class="auth-box">
-      <h1>JENI FRANGOS</h1>
-      <p>Sistema de controlo de produção</p>
-
+      <h1>JENI FRANGOS</h1><p>Sistema de controlo de produção</p>
       <form id="login-form" class="form-grid">
         <input type="email" name="email" placeholder="Email" required />
         <input type="password" name="password" placeholder="Senha" required />
         <button type="submit" class="btn btn-primary">Entrar</button>
       </form>
-
       <form id="register-form" class="form-grid" hidden>
         <input type="email" name="email" placeholder="Email" required />
         <input type="password" name="password" placeholder="Senha" required />
         <button type="submit" class="btn btn-primary">Criar conta</button>
       </form>
-
       <div class="auth-switch">
         <button type="button" id="show-login-btn" class="btn btn-secondary">Login</button>
         <button type="button" id="show-register-btn" class="btn btn-secondary">Criar conta</button>
       </div>
-
       <div id="auth-feedback"></div>
     </div>
   </div>
-
   <div id="app-view" class="app-shell" hidden>
     <aside class="sidebar">
-      <div class="brand">JENI FRANGOS</div>
-
-<nav class="sidebar-nav">
-  <a href="#/dashboard" class="nav-link active" data-route="dashboard">Dashboard</a>
-  <a href="#/compras" class="nav-link" data-route="compras">Compras</a>
-  <a href="#/entradas" class="nav-link" data-route="entradas">Entradas</a>
-  <a href="#/vendas" class="nav-link" data-route="vendas">Vendas</a>
-  <a href="#/mortalidade" class="nav-link" data-route="mortalidade">Mortalidade</a>
-  <a href="#/relatorios" class="nav-link" data-route="relatorios">Relatórios</a>
-  <a href="#/configuracao" class="nav-link" data-route="configuracao">Configuração</a>
-</nav>
+      <div class="brand" id="jeni-brand" title="Duplo clique: Gestão Geral da JENI">JENI FRANGOS</div>
+      <nav class="sidebar-nav">
+        <a href="#/dashboard" class="nav-link active" data-route="dashboard">Dashboard</a>
+        <a href="#/compras" class="nav-link" data-route="compras">Compras</a>
+        <a href="#/entradas" class="nav-link" data-route="entradas">Entradas</a>
+        <a href="#/vendas" class="nav-link" data-route="vendas">Vendas</a>
+        <a href="#/mortalidade" class="nav-link" data-route="mortalidade">Mortalidade</a>
+        <a href="#/ovos" class="nav-link" data-route="ovos">Ovos e Poedeiras</a>
+        <a href="#/relatorios" class="nav-link" data-route="relatorios">Relatórios</a>
+        <a href="#/configuracao" class="nav-link" data-route="configuracao">Configuração</a>
+      </nav>
     </aside>
-
     <main class="main-content">
       <header class="topbar">
-        <div>
-          <h1 id="page-title">Dashboard</h1>
-          <p id="page-subtitle">Controlo da criação de frangos</p>
-        </div>
-
-        <div class="topbar-actions">
-          <span id="user-info"></span>
-          <button id="logout-btn" class="btn btn-secondary">Sair</button>
-        </div>
+        <div><h1 id="page-title">Dashboard</h1><p id="page-subtitle">Controlo da criação de frangos</p></div>
+        <div class="topbar-actions"><span id="user-info"></span><button id="logout-btn" class="btn btn-secondary">Sair</button></div>
       </header>
-
       <section id="page-content"></section>
     </main>
   </div>
-
   <script type="module" src="./assets/js/app.js"></script>
 </body>
 </html>
