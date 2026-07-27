@@ -24,7 +24,7 @@ async function init() {
   loading.hidden = true;
   if (profile?.role !== 'admin') { denied.hidden = false; return; }
   app.hidden = false;
-  document.querySelector('#management-user').textContent = profile.full_name || profile.email;
+  document.querySelector('#management-user').textContent = profile.full_name || profile.email || session.user.email || 'Administradora';
   document.querySelectorAll('[data-department]').forEach(button => button.addEventListener('click', () => renderDepartment(button.dataset.department)));
   document.querySelector('#management-logout').addEventListener('click', async () => { await supabase.auth.signOut(); window.location.replace('./index.html'); });
   await renderDepartment(location.hash.replace('#','') || 'direccao');
@@ -39,6 +39,7 @@ async function renderDepartment(key) {
   if (key === 'direccao') return renderDirection();
   if (key === 'financeiro') return renderFinance();
   if (key === 'projectos') return renderProjects();
+  if (key === 'artistas') return renderArtists();
   if (key === 'avicultura') return renderPoultry();
   if (key === 'tarefas') return renderTasks();
   return renderRecords(key);
@@ -139,6 +140,67 @@ async function renderPoultry() {
   <div class="card mt-16"><h3>Gestão operacional</h3><p>Os registos detalhados de compras, frangos, mortalidade, produção e vendas de ovos permanecem no <a href="./index.html"><strong>JENI Frangos</strong></a>.</p></div>`;
 }
 
+async function renderArtists() {
+  const [{data:summary,error},{data:artists},{data:contracts},{data:activities}] = await Promise.all([
+    supabase.from('artist_agency_summary').select('*').single(),
+    supabase.from('artists').select('*').order('artistic_name'),
+    supabase.from('artist_contracts').select('*,artists(artistic_name)').order('start_date',{ascending:false}),
+    supabase.from('artist_activities').select('*,artists(artistic_name)').order('activity_date',{ascending:false}),
+  ]);
+  if(error)return showError(error);
+  const artistOptions=(artists||[]).filter(a=>a.status==='active').map(a=>`<option value="${a.id}">${a.artistic_name}</option>`).join('');
+  content.innerHTML=`<div class="grid gap-14">
+    <div class="dashboard-grid">${stat('Artistas activos',summary.active_artists)}${stat('Contratos activos',summary.active_contracts)}
+      ${stat('Actividades futuras',summary.upcoming_activities)}${stat('Receita bruta',money(summary.gross_income))}
+      ${stat('Ganho da JENI',money(summary.jeni_income))}${stat('Valor dos artistas',money(summary.artist_income))}
+      ${stat('Pagamentos pendentes',money(summary.pending_payments))}</div>
+    <div class="card"><h3>Cadastrar artista</h3><form id="artist-form" class="form-grid">
+      <input name="artistic_name" placeholder="Nome artístico" required><input name="legal_name" placeholder="Nome completo">
+      <input type="email" name="email" placeholder="Email"><input name="phone" placeholder="Telefone">
+      <input name="genres" placeholder="Género(s) musical(is)"><input name="distributor" placeholder="Distribuidora digital">
+      <input type="url" name="spotify_url" placeholder="Link do Spotify"><input type="url" name="youtube_url" placeholder="Link do YouTube">
+      <input type="url" name="instagram_url" placeholder="Link do Instagram"><select name="status"><option value="active">Activo</option><option value="prospect">Em negociação</option><option value="inactive">Inactivo</option></select>
+      <textarea name="biography" placeholder="Biografia"></textarea><textarea name="notes" placeholder="Observações"></textarea>
+      <button class="btn btn-primary">Guardar artista</button></form><div id="artist-feedback"></div></div>
+    <div class="split">
+      <div class="card"><h3>Novo contrato</h3><form id="artist-contract-form" class="form-grid">
+        <select name="artist_id" required><option value="">Seleccionar artista</option>${artistOptions}</select>
+        <select name="contract_type"><option value="management">Agenciamento</option><option value="booking">Booking</option><option value="distribution">Distribuição</option><option value="other">Outro</option></select>
+        <input type="date" name="start_date" required><input type="date" name="end_date">
+        <input name="commission_notes" placeholder="Condições do ganho da JENI"><input type="url" name="document_url" placeholder="Link do contrato">
+        <textarea name="notes" placeholder="Observações"></textarea><button class="btn btn-primary">Guardar contrato</button>
+      </form><div id="contract-feedback"></div></div>
+      <div class="card"><h3>Nova actividade</h3><form id="artist-activity-form" class="form-grid">
+        <select name="artist_id" required><option value="">Seleccionar artista</option>${artistOptions}</select>
+        <select name="activity_type"><option value="concert">Concerto</option><option value="release">Lançamento</option><option value="distribution">Distribuição</option><option value="opportunity">Oportunidade</option><option value="application">Candidatura</option><option value="other">Outra</option></select>
+        <input name="title" placeholder="Título da actividade" required><input type="date" name="activity_date">
+        <input name="organisation" placeholder="Organização/cliente"><input name="location" placeholder="Local">
+        <input type="number" name="gross_amount" min="0" step="0.01" placeholder="Valor bruto/cachet">
+        <input type="number" name="jeni_income" min="0" step="0.01" placeholder="Ganho manual da JENI">
+        <input type="number" name="artist_amount" min="0" step="0.01" placeholder="Valor do artista">
+        <select name="payment_status"><option value="pending">Pagamento pendente</option><option value="partial">Parcial</option><option value="paid">Pago</option><option value="cancelled">Cancelado</option></select>
+        <select name="status"><option value="planned">Planeada</option><option value="confirmed">Confirmada</option><option value="completed">Concluída</option><option value="cancelled">Cancelada</option></select>
+        <input name="platform_links" placeholder="Links de plataformas ou conteúdos"><textarea name="notes" placeholder="Observações"></textarea>
+        <button class="btn btn-primary">Guardar actividade</button></form><div id="activity-feedback"></div></div>
+    </div>
+    <div class="card"><h3>Artistas</h3>${actionTable(['Artista','Nome completo','Contacto','Distribuidora','Estado','Acções'],(artists||[]).map(a=>[
+      a.artistic_name,a.legal_name||'-',a.email||a.phone||'-',a.distributor||'-',a.status,actions('artists',a.id)
+    ]))}</div>
+    <div class="card"><h3>Contratos</h3>${actionTable(['Artista','Tipo','Início','Fim','Estado','Acções'],(contracts||[]).map(c=>[
+      c.artists?.artistic_name||'-',c.contract_type,c.start_date,c.end_date||'-',c.status,actions('artist_contracts',c.id)
+    ]))}</div>
+    <div class="card"><h3>Actividades, cachets e pagamentos</h3>${actionTable(['Data','Artista','Actividade','Tipo','Bruto','JENI','Artista','Pagamento','Acções'],(activities||[]).map(a=>[
+      a.activity_date||'-',a.artists?.artistic_name||'-',a.title,a.activity_type,money(a.gross_amount),money(a.jeni_income),money(a.artist_amount),
+      `<select data-artist-payment="${a.id}"><option value="pending" ${a.payment_status==='pending'?'selected':''}>Pendente</option><option value="partial" ${a.payment_status==='partial'?'selected':''}>Parcial</option><option value="paid" ${a.payment_status==='paid'?'selected':''}>Pago</option><option value="cancelled" ${a.payment_status==='cancelled'?'selected':''}>Cancelado</option></select>`,
+      actions('artist_activities',a.id)
+    ]))}</div></div>`;
+  document.querySelector('#artist-form').addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);const{error}=await supabase.from('artists').insert({artistic_name:fd.get('artistic_name'),legal_name:fd.get('legal_name')||null,email:fd.get('email')||null,phone:fd.get('phone')||null,genres:fd.get('genres')||null,distributor:fd.get('distributor')||null,spotify_url:fd.get('spotify_url')||null,youtube_url:fd.get('youtube_url')||null,instagram_url:fd.get('instagram_url')||null,status:fd.get('status'),biography:fd.get('biography')||null,notes:fd.get('notes')||null,created_by:profile.id});if(error)return feedback(error.message,'artist-feedback');await renderArtists();});
+  document.querySelector('#artist-contract-form').addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);const{error}=await supabase.from('artist_contracts').insert({artist_id:fd.get('artist_id'),contract_type:fd.get('contract_type'),start_date:fd.get('start_date'),end_date:fd.get('end_date')||null,commission_notes:fd.get('commission_notes')||null,document_url:fd.get('document_url')||null,notes:fd.get('notes')||null,created_by:profile.id});if(error)return feedback(error.message,'contract-feedback');await renderArtists();});
+  document.querySelector('#artist-activity-form').addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);const{error}=await supabase.from('artist_activities').insert({artist_id:fd.get('artist_id'),activity_type:fd.get('activity_type'),title:fd.get('title'),activity_date:fd.get('activity_date')||null,organisation:fd.get('organisation')||null,location:fd.get('location')||null,gross_amount:Number(fd.get('gross_amount')||0),jeni_income:Number(fd.get('jeni_income')||0),artist_amount:Number(fd.get('artist_amount')||0),payment_status:fd.get('payment_status'),status:fd.get('status'),platform_links:fd.get('platform_links')||null,notes:fd.get('notes')||null,created_by:profile.id});if(error)return feedback(error.message,'activity-feedback');await renderArtists();});
+  document.querySelectorAll('[data-artist-payment]').forEach(select=>select.addEventListener('change',async()=>{const{error}=await supabase.from('artist_activities').update({payment_status:select.value,updated_at:new Date().toISOString()}).eq('id',select.dataset.artistPayment);if(error)window.alert(error.message);}));
+  bindActions(renderArtists);
+}
+
 async function renderProjects() {
   const {data:rows,error}=await supabase.from('funding_opportunities').select('*').order('deadline',{ascending:true});
   if(error)return showError(error);
@@ -184,7 +246,7 @@ const actions=(table,id,canToggle=false)=>`<div style="display:flex;gap:6px;whit
 function bindActions(rerender){
   document.querySelectorAll('[data-edit-table]').forEach(button=>button.addEventListener('click',async()=>{
     const table=button.dataset.editTable;
-    const field={partners:'full_name',institutional_transactions:'description',funding_opportunities:'title',department_records:'title',company_tasks:'title'}[table];
+    const field={partners:'full_name',institutional_transactions:'description',funding_opportunities:'title',department_records:'title',company_tasks:'title',artists:'artistic_name',artist_contracts:'commission_notes',artist_activities:'title'}[table];
     const{data,error:readError}=await supabase.from(table).select(field).eq('id',button.dataset.id).single();
     if(readError)return window.alert(readError.message);
     const value=window.prompt('Introduza o novo conteúdo:',data[field]);
