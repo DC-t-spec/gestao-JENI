@@ -115,30 +115,88 @@ async function renderRecords(department) {
   bindActions(()=>renderRecords(department));
 }
 
+
 async function renderFinance() {
-  const [{data:s,error},{data:projects},{data:transactions}] = await Promise.all([
-    supabase.from('management_dashboard').select('*').single(),
-    supabase.from('company_projects').select('*').order('received_date',{ascending:false}).limit(10),
-    supabase.from('institutional_transactions').select('*').order('transaction_date',{ascending:false}).limit(30),
+  const [{data:s,error},{data:accounts},{data:projects},{data:transactions},{data:obligations},{data:budgets},{data:transfers},{data:advances}] = await Promise.all([
+    supabase.from('finance_summary').select('*').single(),
+    supabase.from('finance_account_balances').select('*').order('account_name'),
+    supabase.from('company_projects').select('id,project_name').order('project_name'),
+    supabase.from('institutional_transactions').select('*').order('transaction_date',{ascending:false}).limit(50),
+    supabase.from('finance_obligations').select('*').order('due_date').limit(50),
+    supabase.from('finance_budget_execution').select('*').order('period_start',{ascending:false}).limit(30),
+    supabase.from('finance_transfers_display').select('*').order('transfer_date',{ascending:false}).limit(30),
+    supabase.from('finance_advances').select('*').order('request_date',{ascending:false}).limit(30)
   ]);
-  if(error) return showError(error);
-  content.innerHTML=`<div class="grid gap-14"><div class="dashboard-grid">
-    ${stat('Receitas institucionais',money(s.institutional_income))}${stat('Despesas institucionais',money(s.institutional_expenses))}
-    ${stat('Saldo institucional',money(s.institutional_balance))}${stat('Receita geral identificada',money(Number(s.institutional_income)+Number(s.chicken_revenue)+Number(s.egg_revenue)+Number(s.project_income)+Number(s.partner_dues_income)))}
-    </div>
-    <div class="card"><h3>Novo movimento financeiro</h3><form id="transaction-form" class="form-grid">
+  if(error)return showError(error);
+  const accountOpts=(accounts||[]).filter(a=>a.is_active).map(a=>`<option value="${a.id}">${a.account_name} — ${money(a.current_balance)}</option>`).join('');
+  const projectOpts=(projects||[]).map(p=>`<option value="${p.id}">${p.project_name}</option>`).join('');
+  const obligationOpts=(obligations||[]).filter(o=>!['paid','cancelled'].includes(o.status)).map(o=>`<option value="${o.id}">${o.description} — falta ${money(Number(o.total_amount)-Number(o.paid_amount))}</option>`).join('');
+  const depts='<option value="direccao">Direcção</option><option value="financeiro">Financeiro</option><option value="projectos">Projectos</option><option value="marketing">Marketing</option><option value="artistas">Agência de Artistas</option><option value="avicultura">Avicultura</option><option value="tarefas">Tarefas e Agenda</option><option value="recursos-humanos">Recursos Humanos</option>';
+  content.innerHTML=`<div class="grid gap-14">
+    <div class="dashboard-grid">${stat('Saldo geral',money(s.total_balance))}${stat('Receitas do mês',money(s.month_income))}
+      ${stat('Despesas do mês',money(s.month_expenses))}${stat('Resultado do mês',money(s.month_result))}
+      ${stat('A receber',money(s.total_receivable))}${stat('A pagar',money(s.total_payable))}
+      ${stat('Orçamento disponível',money(s.available_budget))}${stat('Adiantamentos pendentes',money(s.pending_advances))}</div>
+    <div class="card"><h3>Caixa e contas bancárias</h3><form id="finance-account-form" class="form-grid">
+      <input name="account_name" placeholder="Nome da conta ou caixa" required><select name="account_type"><option value="cash">Caixa</option><option value="bank">Conta bancária</option><option value="mobile_money">Carteira móvel</option><option value="other">Outra</option></select>
+      <input name="institution_name" placeholder="Banco/instituição"><input name="account_reference" placeholder="Número ou referência">
+      <input type="number" name="opening_balance" step="0.01" placeholder="Saldo inicial"><input name="currency" value="MZN" placeholder="Moeda">
+      <button class="btn btn-primary">Criar conta</button></form><div id="finance-account-feedback"></div>
+      ${actionTable(['Conta','Tipo','Instituição','Saldo','Estado','Acções'],(accounts||[]).map(a=>[a.account_name,a.account_type,a.institution_name||'-',money(a.current_balance),a.is_active?'Activa':'Inactiva',actions('finance_accounts',a.id,true)]))}</div>
+    <div class="card"><h3>Novo movimento financeiro</h3><form id="finance-transaction-form" class="form-grid">
       <input type="date" name="transaction_date" required><select name="direction"><option value="income">Receita</option><option value="expense">Despesa</option></select>
-      <input name="category" placeholder="Categoria: salário, transporte, honorário…" required>
-      <select name="department"><option value="direccao">Direcção</option><option value="financeiro">Financeiro</option><option value="projectos">Projectos</option><option value="marketing">Marketing</option><option value="artistas">Agência de Artistas</option><option value="recursos-humanos">Recursos Humanos</option></select>
+      <input name="category" placeholder="Categoria: salário, transporte, honorário…" required><select name="department">${depts}</select>
       <input name="description" placeholder="Descrição" required><input type="number" name="amount" min="0.01" step="0.01" placeholder="Valor" required>
-      <select name="payment_method"><option value="">Método de pagamento</option><option value="cash">Dinheiro</option><option value="mpesa">M-Pesa</option><option value="emola">e-Mola</option><option value="bank_transfer">Transferência</option></select>
-      <select name="project_id"><option value="">Sem projecto associado</option>${(projects||[]).map(p=>`<option value="${p.id}">${p.project_name}</option>`).join('')}</select>
-      <textarea name="notes" placeholder="Observações"></textarea><button class="btn btn-primary">Guardar movimento</button>
-    </form><div id="transaction-feedback"></div></div>
-    <div class="card"><h3>Movimentos recentes</h3>${actionTable(['Data','Tipo','Categoria','Descrição','Valor','Acções'],(transactions||[]).map(t=>[
-      t.transaction_date,t.direction==='income'?'Receita':'Despesa',t.category,t.description,money(t.amount),actions('institutional_transactions',t.id)
-    ]))}</div></div>`;
-  document.querySelector('#transaction-form').addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);const{error}=await supabase.from('institutional_transactions').insert({transaction_date:fd.get('transaction_date'),direction:fd.get('direction'),category:fd.get('category'),department:fd.get('department'),description:fd.get('description'),amount:Number(fd.get('amount')),payment_method:fd.get('payment_method')||null,project_id:fd.get('project_id')||null,notes:fd.get('notes')||null,created_by:profile.id});if(error)return feedback(error.message,'transaction-feedback');await renderFinance();});
+      <select name="account_id" required><option value="">Conta/caixa</option>${accountOpts}</select><select name="payment_method"><option value="cash">Dinheiro</option><option value="mpesa">M-Pesa</option><option value="emola">e-Mola</option><option value="bank_transfer">Transferência</option><option value="card">Cartão</option></select>
+      <select name="project_id"><option value="">Sem projecto</option>${projectOpts}</select><select name="approval_status"><option value="approved">Aprovado</option><option value="pending">Aguarda aprovação</option><option value="rejected">Rejeitado</option></select>
+      <select name="recurrence"><option value="none">Não recorrente</option><option value="monthly">Mensal</option><option value="weekly">Semanal</option><option value="yearly">Anual</option></select>
+      <input type="url" name="document_url" placeholder="Factura, recibo ou comprovativo"><textarea name="notes" placeholder="Observações"></textarea>
+      <button class="btn btn-primary">Guardar movimento</button></form><div id="finance-transaction-feedback"></div></div>
+    <div class="split">
+      <div class="card"><h3>Conta a pagar ou receber</h3><form id="finance-obligation-form" class="form-grid">
+        <select name="obligation_type"><option value="payable">Conta a pagar</option><option value="receivable">Conta a receber</option></select><input name="entity_name" placeholder="Fornecedor, cliente ou colaborador" required>
+        <input name="description" placeholder="Descrição" required><input type="number" name="total_amount" min="0.01" step="0.01" placeholder="Valor total" required>
+        <input type="date" name="issue_date" required><input type="date" name="due_date" required><select name="department">${depts}</select>
+        <select name="project_id"><option value="">Sem projecto</option>${projectOpts}</select><input type="url" name="document_url" placeholder="Factura/documento">
+        <textarea name="notes" placeholder="Observações"></textarea><button class="btn btn-primary">Guardar conta</button></form><div id="finance-obligation-feedback"></div></div>
+      <div class="card"><h3>Pagamento ou recebimento parcial</h3><form id="finance-payment-form" class="form-grid">
+        <select name="obligation_id" required><option value="">Conta pendente</option>${obligationOpts}</select><input type="date" name="payment_date" required>
+        <input type="number" name="amount" min="0.01" step="0.01" placeholder="Valor pago/recebido" required><select name="account_id" required><option value="">Conta/caixa</option>${accountOpts}</select>
+        <select name="payment_method"><option value="cash">Dinheiro</option><option value="bank_transfer">Transferência</option><option value="mpesa">M-Pesa</option><option value="emola">e-Mola</option><option value="card">Cartão</option></select>
+        <input type="url" name="document_url" placeholder="Recibo/comprovativo"><textarea name="notes" placeholder="Observações"></textarea>
+        <button class="btn btn-primary">Registar pagamento</button></form><div id="finance-payment-feedback"></div></div>
+    </div>
+    <div class="split">
+      <div class="card"><h3>Orçamento</h3><form id="finance-budget-form" class="form-grid">
+        <input name="title" placeholder="Nome do orçamento" required><select name="department">${depts}</select><select name="project_id"><option value="">Sem projecto</option>${projectOpts}</select>
+        <input type="date" name="period_start" required><input type="date" name="period_end" required><input type="number" name="budget_amount" min="0" step="0.01" placeholder="Valor orçamentado" required>
+        <textarea name="notes" placeholder="Observações"></textarea><button class="btn btn-primary">Guardar orçamento</button></form><div id="finance-budget-feedback"></div></div>
+      <div class="card"><h3>Transferência entre contas</h3><form id="finance-transfer-form" class="form-grid">
+        <input type="date" name="transfer_date" required><select name="from_account_id" required><option value="">Conta de origem</option>${accountOpts}</select>
+        <select name="to_account_id" required><option value="">Conta de destino</option>${accountOpts}</select><input type="number" name="amount" min="0.01" step="0.01" placeholder="Valor" required>
+        <input type="number" name="fee_amount" min="0" step="0.01" placeholder="Taxa"><input type="url" name="document_url" placeholder="Comprovativo">
+        <textarea name="notes" placeholder="Observações"></textarea><button class="btn btn-primary">Transferir</button></form><div id="finance-transfer-feedback"></div></div>
+    </div>
+    <div class="card"><h3>Adiantamento ou reembolso</h3><form id="finance-advance-form" class="form-grid">
+      <select name="advance_type"><option value="advance">Adiantamento</option><option value="reimbursement">Reembolso</option></select><input name="beneficiary_name" placeholder="Beneficiário" required>
+      <input type="date" name="request_date" required><input type="date" name="settlement_due_date"><input type="number" name="amount" min="0.01" step="0.01" placeholder="Valor" required>
+      <select name="department">${depts}</select><select name="project_id"><option value="">Sem projecto</option>${projectOpts}</select>
+      <select name="status"><option value="requested">Solicitado</option><option value="approved">Aprovado</option><option value="paid">Pago</option><option value="settled">Justificado/regularizado</option><option value="rejected">Rejeitado</option></select>
+      <input type="url" name="document_url" placeholder="Documento/comprovativo"><textarea name="purpose" placeholder="Finalidade" required></textarea>
+      <button class="btn btn-primary">Guardar</button></form><div id="finance-advance-feedback"></div></div>
+    <div class="card"><h3>Contas a pagar e receber</h3>${actionTable(['Vencimento','Tipo','Entidade','Descrição','Total','Pago','Saldo','Estado','Acções'],(obligations||[]).map(o=>[o.due_date,o.obligation_type==='payable'?'A pagar':'A receber',o.entity_name,o.description,money(o.total_amount),money(o.paid_amount),money(Number(o.total_amount)-Number(o.paid_amount)),o.status,actions('finance_obligations',o.id)]))}</div>
+    <div class="card"><h3>Movimentos recentes</h3>${actionTable(['Data','Tipo','Categoria','Descrição','Departamento','Valor','Aprovação','Acções'],(transactions||[]).map(t=>[t.transaction_date,t.direction==='income'?'Receita':'Despesa',t.category,t.description,t.department||'-',money(t.amount),t.approval_status||'approved',actions('institutional_transactions',t.id)]))}</div>
+    <div class="card"><h3>Execução orçamental</h3>${simpleTable(['Orçamento','Departamento','Período','Orçamentado','Executado','Disponível'],(budgets||[]).map(b=>[b.title,b.department||'-',b.period_start+' a '+b.period_end,money(b.budget_amount),money(b.spent_amount),money(Number(b.budget_amount)-Number(b.spent_amount))]))}</div>
+    <div class="card"><h3>Transferências e adiantamentos</h3>${actionTable(['Data','Registo','Responsável/Origem','Valor','Estado/Destino','Acções'],[...(transfers||[]).map(t=>[t.transfer_date,'Transferência',t.from_account_name||'-',money(t.amount),t.to_account_name||'-',actions('finance_transfers',t.id)]),...(advances||[]).map(a=>[a.request_date,a.advance_type==='advance'?'Adiantamento':'Reembolso',a.beneficiary_name,money(a.amount),a.status,actions('finance_advances',a.id)])])}</div>
+  </div>`;
+  const insertForm=(selector,table,make,id)=>document.querySelector(selector).addEventListener('submit',async e=>{e.preventDefault();const{error}=await supabase.from(table).insert(make(new FormData(e.currentTarget)));if(error)return feedback(error.message,id);await renderFinance();});
+  insertForm('#finance-account-form','finance_accounts',fd=>({account_name:fd.get('account_name'),account_type:fd.get('account_type'),institution_name:fd.get('institution_name')||null,account_reference:fd.get('account_reference')||null,opening_balance:Number(fd.get('opening_balance')||0),currency:fd.get('currency')||'MZN',created_by:profile.id}),'finance-account-feedback');
+  insertForm('#finance-transaction-form','institutional_transactions',fd=>({transaction_date:fd.get('transaction_date'),direction:fd.get('direction'),category:fd.get('category'),department:fd.get('department'),description:fd.get('description'),amount:Number(fd.get('amount')),account_id:fd.get('account_id'),payment_method:fd.get('payment_method'),project_id:fd.get('project_id')||null,approval_status:fd.get('approval_status'),approved_by:fd.get('approval_status')==='approved'?profile.id:null,approved_at:fd.get('approval_status')==='approved'?new Date().toISOString():null,recurrence:fd.get('recurrence'),document_url:fd.get('document_url')||null,notes:fd.get('notes')||null,created_by:profile.id}),'finance-transaction-feedback');
+  insertForm('#finance-obligation-form','finance_obligations',fd=>({obligation_type:fd.get('obligation_type'),entity_name:fd.get('entity_name'),description:fd.get('description'),total_amount:Number(fd.get('total_amount')),issue_date:fd.get('issue_date'),due_date:fd.get('due_date'),department:fd.get('department'),project_id:fd.get('project_id')||null,document_url:fd.get('document_url')||null,notes:fd.get('notes')||null,created_by:profile.id}),'finance-obligation-feedback');
+  insertForm('#finance-budget-form','finance_budgets',fd=>({title:fd.get('title'),department:fd.get('department'),project_id:fd.get('project_id')||null,period_start:fd.get('period_start'),period_end:fd.get('period_end'),budget_amount:Number(fd.get('budget_amount')),notes:fd.get('notes')||null,created_by:profile.id}),'finance-budget-feedback');
+  insertForm('#finance-transfer-form','finance_transfers',fd=>({transfer_date:fd.get('transfer_date'),from_account_id:fd.get('from_account_id'),to_account_id:fd.get('to_account_id'),amount:Number(fd.get('amount')),fee_amount:Number(fd.get('fee_amount')||0),document_url:fd.get('document_url')||null,notes:fd.get('notes')||null,created_by:profile.id}),'finance-transfer-feedback');
+  insertForm('#finance-advance-form','finance_advances',fd=>({advance_type:fd.get('advance_type'),beneficiary_name:fd.get('beneficiary_name'),request_date:fd.get('request_date'),settlement_due_date:fd.get('settlement_due_date')||null,amount:Number(fd.get('amount')),department:fd.get('department'),project_id:fd.get('project_id')||null,status:fd.get('status'),document_url:fd.get('document_url')||null,purpose:fd.get('purpose'),created_by:profile.id}),'finance-advance-feedback');
+  document.querySelector('#finance-payment-form').addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(e.currentTarget),id=fd.get('obligation_id');const o=(obligations||[]).find(x=>x.id===id),amount=Number(fd.get('amount'));if(!o)return feedback('Conta não encontrada.','finance-payment-feedback');if(amount>Number(o.total_amount)-Number(o.paid_amount))return feedback('O valor excede o saldo da conta.','finance-payment-feedback');const payment={obligation_id:id,payment_date:fd.get('payment_date'),amount,account_id:fd.get('account_id'),payment_method:fd.get('payment_method'),document_url:fd.get('document_url')||null,notes:fd.get('notes')||null,created_by:profile.id};const{error}=await supabase.from('finance_payments').insert(payment);if(error)return feedback(error.message,'finance-payment-feedback');const total=Number(o.paid_amount)+amount;await supabase.from('finance_obligations').update({paid_amount:total,status:total>=Number(o.total_amount)?'paid':'partial',updated_at:new Date().toISOString()}).eq('id',id);await supabase.from('institutional_transactions').insert({transaction_date:fd.get('payment_date'),direction:o.obligation_type==='payable'?'expense':'income',category:o.obligation_type==='payable'?'Pagamento de conta':'Recebimento',department:o.department,description:o.description,amount,account_id:fd.get('account_id'),payment_method:fd.get('payment_method'),project_id:o.project_id||null,approval_status:'approved',approved_by:profile.id,approved_at:new Date().toISOString(),document_url:fd.get('document_url')||null,created_by:profile.id});await renderFinance();});
   bindActions(renderFinance);
 }
 
@@ -486,7 +544,7 @@ const actions=(table,id,canToggle=false)=>`<div style="display:flex;gap:6px;whit
 function bindActions(rerender){
   document.querySelectorAll('[data-edit-table]').forEach(button=>button.addEventListener('click',async()=>{
     const table=button.dataset.editTable;
-    const field={partners:'full_name',institutional_transactions:'description',funding_opportunities:'title',department_records:'title',company_tasks:'title',artists:'artistic_name',artist_contracts:'commission_notes',artist_activities:'title',project_records:'title',project_expenses:'description',project_milestones:'title',marketing_campaigns:'name',marketing_content:'title',marketing_expenses:'description',marketing_resources:'name',agenda_events:'title',hr_employees:'full_name',hr_contracts:'contract_type',hr_absences:'absence_type',hr_movements:'reason',hr_documents:'title'}[table];
+    const field={partners:'full_name',institutional_transactions:'description',funding_opportunities:'title',department_records:'title',company_tasks:'title',artists:'artistic_name',artist_contracts:'commission_notes',artist_activities:'title',project_records:'title',project_expenses:'description',project_milestones:'title',marketing_campaigns:'name',marketing_content:'title',marketing_expenses:'description',marketing_resources:'name',agenda_events:'title',hr_employees:'full_name',hr_contracts:'contract_type',hr_absences:'absence_type',hr_movements:'reason',hr_documents:'title',finance_accounts:'account_name',finance_obligations:'description',finance_transfers:'notes',finance_advances:'purpose'}[table];
     const{data,error:readError}=await supabase.from(table).select(field).eq('id',button.dataset.id).single();
     if(readError)return window.alert(readError.message);
     const value=window.prompt('Introduza o novo conteúdo:',data[field]);
@@ -503,9 +561,10 @@ function bindActions(rerender){
   }));
   document.querySelectorAll('[data-toggle-table]').forEach(button=>button.addEventListener('click',async()=>{
     const table=button.dataset.toggleTable;
-    const field=table==='partners'?'is_active':'status';
+    const field=['partners','finance_accounts'].includes(table)?'is_active':'status';
     let value;
-    if(table==='partners'){
+    if(table==='finance_accounts'){const{data}=await supabase.from(table).select('is_active').eq('id',button.dataset.id).single();value=!data.is_active;
+    }else if(table==='partners'){
       const{data}=await supabase.from(table).select('is_active').eq('id',button.dataset.id).single();value=!data.is_active;
     }else{
       const{data}=await supabase.from(table).select('status').eq('id',button.dataset.id).single();
