@@ -342,22 +342,61 @@ async function renderProjects() {
 }
 
 async function renderTasks() {
-  const [{data:tasks,error},{data:users}] = await Promise.all([
+  const [{data:summary,error},{data:tasks},{data:users},{data:events},{data:comments},{data:projects},{data:artists},{data:campaigns}] = await Promise.all([
+    supabase.from('tasks_agenda_summary').select('*').single(),
     supabase.from('company_tasks').select('*,profiles!company_tasks_assigned_to_fkey(full_name,email)').order('due_date'),
-    supabase.from('profiles').select('id,full_name,email').eq('is_active',true)
+    supabase.from('profiles').select('id,full_name,email').eq('is_active',true),
+    supabase.from('agenda_events').select('*,profiles!agenda_events_responsible_id_fkey(full_name,email)').order('event_date').limit(40),
+    supabase.from('task_comments').select('*').order('created_at',{ascending:false}).limit(30),
+    supabase.from('project_records').select('id,title').order('title'),
+    supabase.from('artists').select('id,artistic_name').eq('status','active'),
+    supabase.from('marketing_campaigns').select('id,name').order('name')
   ]);
   if(error) return showError(error);
-  content.innerHTML=`<div class="grid gap-14"><div class="card"><h3>Atribuir tarefa</h3><form id="task-form" class="form-grid">
-    <input name="title" placeholder="Tarefa" required><select name="assigned_to" required><option value="">Responsável</option>${(users||[]).map(u=>`<option value="${u.id}">${u.full_name||u.email}</option>`).join('')}</select>
-    <input type="date" name="due_date"><select name="priority"><option value="normal">Prioridade normal</option><option value="high">Alta</option><option value="low">Baixa</option></select>
-    <textarea name="description" placeholder="Descrição"></textarea><button class="btn btn-primary">Atribuir</button></form><div id="task-feedback"></div></div>
+  const userOptions=(users||[]).map(u=>`<option value="${u.id}">${validIdentity(u.full_name)||validIdentity(u.email)||'Utilizador'}</option>`).join('');
+  const projectOptions=(projects||[]).map(p=>`<option value="${p.id}">${p.title}</option>`).join('');
+  const artistOptions=(artists||[]).map(a=>`<option value="${a.id}">${a.artistic_name}</option>`).join('');
+  const campaignOptions=(campaigns||[]).map(c=>`<option value="${c.id}">${c.name}</option>`).join('');
+  content.innerHTML=`<div class="grid gap-14">
+    <div class="dashboard-grid">${stat('Tarefas de hoje',summary.tasks_today)}${stat('Tarefas atrasadas',summary.overdue_tasks)}
+      ${stat('Agenda de hoje',summary.events_today)}${stat('Agenda da semana',summary.events_week)}
+      ${stat('Tarefas abertas',summary.open_tasks)}${stat('Tarefas concluídas',summary.completed_tasks)}</div>
+    <div class="card"><h3>Atribuir tarefa ou subtarefa</h3><form id="task-form" class="form-grid">
+      <input name="title" placeholder="Tarefa" required><select name="assigned_to" required><option value="">Responsável</option>${userOptions}</select>
+      <input type="date" name="due_date"><select name="priority"><option value="normal">Prioridade normal</option><option value="high">Alta</option><option value="low">Baixa</option></select>
+      <select name="department"><option value="">Departamento</option><option value="direccao">Direcção</option><option value="financeiro">Financeiro</option><option value="projectos">Projectos</option><option value="marketing">Marketing</option><option value="artistas">Artistas</option><option value="avicultura">Avicultura</option><option value="recursos-humanos">Recursos Humanos</option></select>
+      <select name="parent_task_id"><option value="">Tarefa principal</option>${(tasks||[]).filter(t=>!t.parent_task_id).map(t=>`<option value="${t.id}">Subtarefa de: ${t.title}</option>`).join('')}</select>
+      <select name="project_record_id"><option value="">Sem projecto</option>${projectOptions}</select><select name="artist_id"><option value="">Sem artista</option>${artistOptions}</select>
+      <select name="campaign_id"><option value="">Sem campanha</option>${campaignOptions}</select>
+      <select name="recurrence"><option value="none">Não repetir</option><option value="daily">Diariamente</option><option value="weekly">Semanalmente</option><option value="monthly">Mensalmente</option><option value="yearly">Anualmente</option></select>
+      <input type="date" name="recurrence_end" title="Fim da repetição"><input type="url" name="document_url" placeholder="Link do documento">
+      <textarea name="description" placeholder="Descrição"></textarea><button class="btn btn-primary">Atribuir</button></form><div id="task-feedback"></div></div>
+    <div class="split"><div class="card"><h3>Reunião, evento ou lembrete</h3><form id="event-form" class="form-grid">
+      <input name="title" placeholder="Título" required><select name="event_type"><option value="meeting">Reunião</option><option value="event">Evento</option><option value="deadline">Prazo</option><option value="reminder">Lembrete</option><option value="other">Outro</option></select>
+      <input type="date" name="event_date" required><input type="time" name="start_time"><input type="time" name="end_time"><input name="location" placeholder="Local ou link">
+      <select name="responsible_id"><option value="">Responsável</option>${userOptions}</select><select name="department"><option value="">Departamento</option><option value="direccao">Direcção</option><option value="financeiro">Financeiro</option><option value="projectos">Projectos</option><option value="marketing">Marketing</option><option value="artistas">Artistas</option><option value="avicultura">Avicultura</option><option value="recursos-humanos">Recursos Humanos</option></select>
+      <select name="project_record_id"><option value="">Sem projecto</option>${projectOptions}</select><select name="artist_id"><option value="">Sem artista</option>${artistOptions}</select>
+      <select name="campaign_id"><option value="">Sem campanha</option>${campaignOptions}</select><select name="recurrence"><option value="none">Não repetir</option><option value="daily">Diariamente</option><option value="weekly">Semanalmente</option><option value="monthly">Mensalmente</option><option value="yearly">Anualmente</option></select>
+      <input type="date" name="recurrence_end"><input type="url" name="document_url" placeholder="Link do documento"><textarea name="notes" placeholder="Agenda/observações"></textarea>
+      <button class="btn btn-primary">Guardar na agenda</button></form><div id="event-feedback"></div></div>
+    <div class="card"><h3>Comentário ou actualização</h3><form id="comment-form" class="form-grid">
+      <select name="task_id" required><option value="">Seleccionar tarefa</option>${(tasks||[]).map(t=>`<option value="${t.id}">${t.title}</option>`).join('')}</select>
+      <textarea name="comment_text" placeholder="Comentário ou progresso" required></textarea><button class="btn btn-primary">Adicionar</button></form><div id="comment-feedback"></div>
+      <h3>Actualizações recentes</h3>${simpleTable(['Quando','Actualização'],(comments||[]).map(c=>[new Date(c.created_at).toLocaleString('pt-PT'),c.comment_text]))}</div></div>
     <div class="card"><h3>Tarefas</h3>${actionTable(['Tarefa','Responsável','Prazo','Prioridade','Estado','Acções'],(tasks||[]).map(t=>[
-      t.title,t.profiles?.full_name||t.profiles?.email||'-',t.due_date||'-',t.priority,
+      `${t.parent_task_id?'↳ ':''}${t.title}`,validIdentity(t.profiles?.full_name)||validIdentity(t.profiles?.email)||'-',t.due_date||'-',`${t.priority}${t.recurrence&&t.recurrence!=='none'?` · ${t.recurrence}`:''}`,
       `<select data-status-table="company_tasks" data-id="${t.id}"><option value="pending" ${t.status==='pending'?'selected':''}>Pendente</option><option value="in_progress" ${t.status==='in_progress'?'selected':''}>Em curso</option><option value="completed" ${t.status==='completed'?'selected':''}>Concluída</option><option value="cancelled" ${t.status==='cancelled'?'selected':''}>Cancelada</option></select>`,
       actions('company_tasks',t.id)
+    ]))}</div>
+    <div class="card"><h3>Agenda</h3>${actionTable(['Data','Hora','Tipo','Evento','Local','Responsável','Estado','Acções'],(events||[]).map(ev=>[
+      ev.event_date,ev.start_time?.slice(0,5)||'-',ev.event_type,ev.title,ev.location||'-',validIdentity(ev.profiles?.full_name)||validIdentity(ev.profiles?.email)||'-',
+      `<select data-event-status="${ev.id}"><option value="scheduled" ${ev.status==='scheduled'?'selected':''}>Agendado</option><option value="completed" ${ev.status==='completed'?'selected':''}>Realizado</option><option value="cancelled" ${ev.status==='cancelled'?'selected':''}>Cancelado</option></select>`,actions('agenda_events',ev.id)
     ]))}</div></div>`;
-  document.querySelector('#task-form').addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);const{error}=await supabase.from('company_tasks').insert({title:fd.get('title'),assigned_to:fd.get('assigned_to'),due_date:fd.get('due_date')||null,priority:fd.get('priority'),description:fd.get('description')||null,created_by:profile.id});if(error)return feedback(error.message,'task-feedback');await renderTasks();});
+  document.querySelector('#task-form').addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);const{error}=await supabase.from('company_tasks').insert({title:fd.get('title'),assigned_to:fd.get('assigned_to'),due_date:fd.get('due_date')||null,priority:fd.get('priority'),department:fd.get('department')||null,parent_task_id:fd.get('parent_task_id')||null,project_record_id:fd.get('project_record_id')||null,artist_id:fd.get('artist_id')||null,campaign_id:fd.get('campaign_id')||null,recurrence:fd.get('recurrence'),recurrence_end:fd.get('recurrence_end')||null,document_url:fd.get('document_url')||null,description:fd.get('description')||null,created_by:profile.id});if(error)return feedback(error.message,'task-feedback');await renderTasks();});
+  document.querySelector('#event-form').addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);const{error}=await supabase.from('agenda_events').insert({title:fd.get('title'),event_type:fd.get('event_type'),event_date:fd.get('event_date'),start_time:fd.get('start_time')||null,end_time:fd.get('end_time')||null,location:fd.get('location')||null,responsible_id:fd.get('responsible_id')||null,department:fd.get('department')||null,project_record_id:fd.get('project_record_id')||null,artist_id:fd.get('artist_id')||null,campaign_id:fd.get('campaign_id')||null,recurrence:fd.get('recurrence'),recurrence_end:fd.get('recurrence_end')||null,document_url:fd.get('document_url')||null,notes:fd.get('notes')||null,created_by:profile.id});if(error)return feedback(error.message,'event-feedback');await renderTasks();});
+  document.querySelector('#comment-form').addEventListener('submit',async e=>{e.preventDefault();const fd=new FormData(e.currentTarget);const{error}=await supabase.from('task_comments').insert({task_id:fd.get('task_id'),comment_text:fd.get('comment_text'),created_by:profile.id});if(error)return feedback(error.message,'comment-feedback');await renderTasks();});
   document.querySelectorAll('[data-status-table]').forEach(select=>select.addEventListener('change',async()=>{const payload={status:select.value,completed_at:select.value==='completed'?new Date().toISOString():null};const{error}=await supabase.from(select.dataset.statusTable).update(payload).eq('id',select.dataset.id);if(error)window.alert(error.message);await renderTasks();}));
+  document.querySelectorAll('[data-event-status]').forEach(select=>select.addEventListener('change',async()=>{const{error}=await supabase.from('agenda_events').update({status:select.value,updated_at:new Date().toISOString()}).eq('id',select.dataset.eventStatus);if(error)window.alert(error.message);await renderTasks();}));
   bindActions(renderTasks);
 }
 
@@ -369,13 +408,13 @@ const actions=(table,id,canToggle=false)=>`<div style="display:flex;gap:6px;whit
 function bindActions(rerender){
   document.querySelectorAll('[data-edit-table]').forEach(button=>button.addEventListener('click',async()=>{
     const table=button.dataset.editTable;
-    const field={partners:'full_name',institutional_transactions:'description',funding_opportunities:'title',department_records:'title',company_tasks:'title',artists:'artistic_name',artist_contracts:'commission_notes',artist_activities:'title',project_records:'title',project_expenses:'description',project_milestones:'title',marketing_campaigns:'name',marketing_content:'title',marketing_expenses:'description',marketing_resources:'name'}[table];
+    const field={partners:'full_name',institutional_transactions:'description',funding_opportunities:'title',department_records:'title',company_tasks:'title',artists:'artistic_name',artist_contracts:'commission_notes',artist_activities:'title',project_records:'title',project_expenses:'description',project_milestones:'title',marketing_campaigns:'name',marketing_content:'title',marketing_expenses:'description',marketing_resources:'name',agenda_events:'title'}[table];
     const{data,error:readError}=await supabase.from(table).select(field).eq('id',button.dataset.id).single();
     if(readError)return window.alert(readError.message);
     const value=window.prompt('Introduza o novo conteúdo:',data[field]);
     if(value===null||!value.trim())return;
     const updatePayload={[field]:value.trim()};
-    if(['institutional_transactions','funding_opportunities','department_records','artists','artist_contracts','artist_activities','project_records','marketing_campaigns','marketing_content'].includes(table))updatePayload.updated_at=new Date().toISOString();
+    if(['institutional_transactions','funding_opportunities','department_records','artists','artist_contracts','artist_activities','project_records','marketing_campaigns','marketing_content','agenda_events'].includes(table))updatePayload.updated_at=new Date().toISOString();
     const{error}=await supabase.from(table).update(updatePayload).eq('id',button.dataset.id);
     if(error)return window.alert(error.message);await rerender();
   }));
@@ -402,7 +441,7 @@ function bindActions(rerender){
       value=cycles[table]?.[data.status]||data.status;
     }
     const updatePayload={[field]:value};
-    if(['institutional_transactions','funding_opportunities','department_records','artists','artist_contracts','artist_activities','project_records','marketing_campaigns','marketing_content'].includes(table))updatePayload.updated_at=new Date().toISOString();
+    if(['institutional_transactions','funding_opportunities','department_records','artists','artist_contracts','artist_activities','project_records','marketing_campaigns','marketing_content','agenda_events'].includes(table))updatePayload.updated_at=new Date().toISOString();
     const{error}=await supabase.from(table).update(updatePayload).eq('id',button.dataset.id);
     if(error)return window.alert(error.message);await rerender();
   }));
