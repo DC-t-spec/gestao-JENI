@@ -189,7 +189,8 @@ export async function renderDashboard() {
   const chickenAccumulatedRevenue = sumAmounts(chickenAllSales);
   const totalMonthRevenue = chickenMonthRevenue + eggMonthRevenue;
   const pendingEggAmount = sumAmounts(pendingEggSales);
-  const totalReceivables = Number(receivables?.total_due || 0) + pendingEggAmount;
+  const pendingChickenAmount = Number(receivables?.total_due || 0);
+  const totalReceivables = pendingChickenAmount + pendingEggAmount;
   const totalPendingSales = Number(data.total_pending_sales || 0) + (pendingEggSales || []).length;
   const monthPurchases = Number(data.month_purchases || 0);
   const realMonthCashBalance = monthTransactionsError
@@ -263,6 +264,7 @@ export async function renderDashboard() {
         <div class="section-title"><div><h3>Contas a Receber</h3><div class="muted">Resumo de recebimentos pendentes</div></div></div>
         <div class="dashboard-grid">
           <div class="card stat"><h4>Total por receber</h4><strong>${formatMoney(totalReceivables)}</strong></div>
+          <div class="card stat"><h4>Frangos por receber</h4><strong>${formatMoney(pendingChickenAmount)}</strong></div>
           <div class="card stat"><h4>Ovos por receber</h4><strong>${formatMoney(pendingEggAmount)}</strong></div>
           <div class="card stat"><h4>Vendas pendentes</h4><strong>${formatNumber(totalPendingSales)}</strong></div>
         </div>
