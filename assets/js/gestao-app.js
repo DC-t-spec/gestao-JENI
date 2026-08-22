@@ -1,4 +1,5 @@
 import { supabase } from './core/supabase-client.js';
+import { validateFinancialAccountBalances } from './services/financial.service.js';
 
 const departments = {
   direccao: ['Direcção e Administração', 'Decisões, reuniões e documentos institucionais'],
@@ -31,20 +32,22 @@ function sumRows(rows, field = 'total_amount') {
 }
 
 async function getPoultrySnapshot(range = currentMonthDates()) {
-  const [eggsResult, birdsResult, chickenSalesResult, eggSalesResult, purchasesResult, accountsResult, transactionsResult] = await Promise.all([
+  const [eggsResult, birdsResult, chickenSalesResult, eggSalesResult, purchasesResult, accountsResult, transactionsResult, salePaymentsResult] = await Promise.all([
     supabase.from('egg_business_summary').select('*').single(),
     supabase.from('dashboard_summary').select('*').single(),
     supabase.from('sales').select('id, sale_date, customer_name, total_amount, amount_paid, amount_due, payment_status'),
     supabase.from('egg_sales').select('id, sale_date, customer_name, total_amount, payment_method'),
     supabase.from('purchases').select('id, purchase_date, item_name, total_amount').gte('purchase_date', range.start).lte('purchase_date', range.end),
     supabase.from('financial_account_balances').select('*').eq('is_active', true),
-    supabase.from('financial_transactions').select('*').gte('transaction_date', range.start).lte('transaction_date', range.end).order('transaction_date', { ascending: false }),
+    supabase.from('financial_transactions').select('*').order('transaction_date', { ascending: false }),
+    supabase.from('sale_payments').select('id, sale_id, amount_paid'),
   ]);
 
   const essentialError = eggsResult.error || birdsResult.error || chickenSalesResult.error || eggSalesResult.error || purchasesResult.error;
   if (essentialError) throw essentialError;
   if (accountsResult.error) console.warn('Não foi possível carregar contas da avicultura:', accountsResult.error.message);
   if (transactionsResult.error) console.warn('Não foi possível carregar movimentos da avicultura:', transactionsResult.error.message);
+  if (salePaymentsResult.error) console.warn('Não foi possível validar pagamentos parciais de frangos:', salePaymentsResult.error.message);
 
   const chickens = chickenSalesResult.data || [];
   const eggSales = eggSalesResult.data || [];
@@ -53,7 +56,16 @@ async function getPoultrySnapshot(range = currentMonthDates()) {
   const periodEggSales = eggSales.filter(inRange);
   const pendingChickenSales = chickens.filter((sale) => Number(sale.amount_due || 0) > 0);
   const pendingEggSales = eggSales.filter((sale) => !sale.payment_method);
-  const poultryAccounts = accountsResult.data || [];
+  const validatedFinances = transactionsResult.error
+    ? { accounts: accountsResult.data || [], transactions: [] }
+    : validateFinancialAccountBalances(accountsResult.data || [], transactionsResult.data || [], {
+      chickenSales: chickens,
+      eggSales,
+      salePayments: salePaymentsResult.error ? null : salePaymentsResult.data,
+    });
+  const poultryAccounts = validatedFinances.accounts;
+  const periodTransactions = validatedFinances.transactions.filter((transaction) =>
+    transaction.transaction_date >= range.start && transaction.transaction_date <= range.end);
 
   return {
     eggs: eggsResult.data || {},
@@ -71,7 +83,7 @@ async function getPoultrySnapshot(range = currentMonthDates()) {
     eggReceivable: sumRows(pendingEggSales),
     accounts: poultryAccounts,
     availableBalance: sumRows(poultryAccounts, 'current_balance'),
-    transactions: transactionsResult.data || [],
+    transactions: periodTransactions,
     range,
   };
 }

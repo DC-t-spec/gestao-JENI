@@ -10,6 +10,7 @@ import {
   getActiveFinancialAccounts,
   getReceivablesSummary,
   reconcileEggSaleTransactions,
+  validateFinancialAccountBalances,
 } from '../services/financial.service.js';
 
 function normalizeAccountBalancesByType(accounts) {
@@ -128,6 +129,8 @@ export async function renderDashboard() {
     { data: stockData },
     { data: eggSummary },
     { data: chickenAllSales },
+    { data: eggAllSales },
+    { data: chickenSalePayments, error: chickenSalePaymentsError },
     { data: chickenMonthSales },
     { data: eggMonthSales },
     { data: pendingEggSales },
@@ -145,7 +148,13 @@ export async function renderDashboard() {
       .single(),
     supabase
       .from('sales')
-      .select('total_amount'),
+      .select('id, total_amount, amount_paid, amount_due, payment_status'),
+    supabase
+      .from('egg_sales')
+      .select('id, total_amount, payment_method'),
+    supabase
+      .from('sale_payments')
+      .select('id, sale_id, amount_paid'),
     supabase
       .from('sales')
       .select('total_amount')
@@ -153,7 +162,7 @@ export async function renderDashboard() {
       .lt('sale_date', nextMonthStart),
     supabase
       .from('egg_sales')
-      .select('total_amount')
+      .select('total_amount, payment_method')
       .gte('sale_date', monthStart)
       .lt('sale_date', nextMonthStart),
     supabase
@@ -184,14 +193,23 @@ export async function renderDashboard() {
     console.error('Erro ao regularizar movimentos financeiros das vendas de ovos:', reconciliationError);
   }
 
-  const [financialBalances, { data: monthTransactions, error: monthTransactionsError }] = await Promise.all([
+  const [rawFinancialBalances, { data: allTransactions, error: transactionsError }] = await Promise.all([
     getFinancialAccountBalances().catch(() => []),
     supabase
       .from('financial_transactions')
-      .select('direction, amount')
-      .gte('transaction_date', monthStart)
-      .lt('transaction_date', nextMonthStart),
+      .select('id, account_id, direction, amount, reference_type, reference_id, transaction_date'),
   ]);
+
+  const validatedFinances = transactionsError
+    ? { accounts: rawFinancialBalances, transactions: [], ignoredTransactions: [] }
+    : validateFinancialAccountBalances(rawFinancialBalances, allTransactions, {
+      chickenSales: chickenAllSales,
+      eggSales: eggAllSales,
+      salePayments: chickenSalePaymentsError ? null : chickenSalePayments,
+    });
+  const financialBalances = validatedFinances.accounts;
+  const monthTransactions = validatedFinances.transactions.filter((transaction) =>
+    transaction.transaction_date >= monthStart && transaction.transaction_date < nextMonthStart);
 
   const accountOptions = (activeAccounts || []).map((account) => `<option value="${account.id}">${account.name}</option>`).join('');
 
@@ -217,8 +235,8 @@ export async function renderDashboard() {
   const totalReceivables = pendingChickenAmount + pendingEggAmount + manualReceivables;
   const totalPendingSales = Number(data.total_pending_sales || 0) + (pendingEggSales || []).length;
   const monthPurchases = Number(data.month_purchases || 0);
-  const realMonthCashBalance = monthTransactionsError
-    ? Number(data.real_month_cash_balance || 0) + eggMonthRevenue
+  const realMonthCashBalance = transactionsError
+    ? Number(data.real_month_cash_balance || 0) + sumAmounts((eggMonthSales || []).filter((sale) => sale.payment_method))
     : (monthTransactions || []).reduce((balance, transaction) => {
       const amount = Number(transaction?.amount || 0);
       return balance + (transaction?.direction === 'out' ? -amount : amount);

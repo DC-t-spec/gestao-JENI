@@ -2,6 +2,7 @@ import { supabase } from '../core/supabase-client.js';
 import { formatMoney, formatNumber } from '../core/utils.js';
 import { setPageHeader, showFeedback } from '../ui/ui.js';
 import { dom } from '../ui/dom.js';
+import { validateFinancialAccountBalances } from '../services/financial.service.js';
 
 export async function renderReports() {
   setPageHeader('Relatórios', 'Consulta financeira por período personalizado');
@@ -38,18 +39,29 @@ export async function renderReports() {
       { data: purchases, error: purchasesError },
       { data: mortality, error: mortalityError },
       { data: transactions, error: transactionsError },
+      { data: allChickenSales, error: allChickenSalesError },
+      { data: allEggSales, error: allEggSalesError },
+      { data: salePayments, error: salePaymentsError },
     ] = await Promise.all([
       supabase.from('sales_financial_report').select('*').gte('sale_date', startDate).lte('sale_date', endDate).order('sale_date', { ascending: false }),
       supabase.from('egg_sales').select('*').gte('sale_date', startDate).lte('sale_date', endDate).order('sale_date', { ascending: false }),
       supabase.from('purchases').select('*').gte('purchase_date', startDate).lte('purchase_date', endDate).order('purchase_date', { ascending: false }),
       supabase.from('mortality_logs').select('*').gte('log_date', startDate).lte('log_date', endDate).order('log_date', { ascending: false }),
       supabase.from('financial_transactions').select('*').gte('transaction_date', startDate).lte('transaction_date', endDate).order('transaction_date', { ascending: false }),
+      supabase.from('sales').select('id, total_amount, amount_paid, amount_due'),
+      supabase.from('egg_sales').select('id, total_amount, payment_method'),
+      supabase.from('sale_payments').select('id, sale_id, amount_paid'),
     ]);
 
-    if (salesError || eggSalesError || purchasesError || mortalityError || transactionsError) {
-      return showFeedback(feedback, salesError?.message || eggSalesError?.message || purchasesError?.message || mortalityError?.message || transactionsError?.message, 'error');
+    if (salesError || eggSalesError || purchasesError || mortalityError || transactionsError || allChickenSalesError || allEggSalesError) {
+      return showFeedback(feedback, salesError?.message || eggSalesError?.message || purchasesError?.message || mortalityError?.message || transactionsError?.message || allChickenSalesError?.message || allEggSalesError?.message, 'error');
     }
 
+    const validTransactions = validateFinancialAccountBalances([], transactions, {
+      chickenSales: allChickenSales,
+      eggSales: allEggSales,
+      salePayments: salePaymentsError ? null : salePayments,
+    }).transactions;
     const totalBase = (sales || []).reduce((sum, row) => sum + Number(row.taxable_base || 0), 0);
     const totalVat = (sales || []).reduce((sum, row) => sum + Number(row.vat_amount || 0), 0);
     const chickenSalesTotal = (sales || []).reduce((sum, row) => sum + Number(row.total_amount || 0), 0);
@@ -60,10 +72,10 @@ export async function renderReports() {
     const totalPurchases = (purchases || []).reduce((sum, row) => sum + Number(row.total_amount || 0), 0);
     const totalDeaths = (mortality || []).reduce((sum, row) => sum + Number(row.quantity_dead || 0), 0);
     const balance = totalSales - totalPurchases;
-    const cashIn = (transactions || [])
+    const cashIn = validTransactions
       .filter((row) => String(row.direction || '').toLowerCase() === 'in')
       .reduce((sum, row) => sum + Number(row.amount || 0), 0);
-    const cashOut = (transactions || [])
+    const cashOut = validTransactions
       .filter((row) => String(row.direction || '').toLowerCase() === 'out')
       .reduce((sum, row) => sum + Number(row.amount || 0), 0);
     const realCash = cashIn - cashOut;

@@ -38,6 +38,91 @@ export async function getFinancialAccountBalances() {
   return data || [];
 }
 
+export function validateFinancialAccountBalances(accounts, transactions, {
+  chickenSales = [],
+  eggSales = [],
+  salePayments = null,
+} = {}) {
+  const chickenById = new Map((chickenSales || []).map((sale) => [String(sale.id), sale]));
+  const eggsById = new Map((eggSales || []).map((sale) => [String(sale.id), sale]));
+  const paymentsById = salePayments === null
+    ? null
+    : new Map((salePayments || []).map((payment) => [String(payment.id), payment]));
+  const remainingChickenPayments = new Map((chickenSales || []).map((sale) => {
+    const paidAmount = sale.amount_paid === null || sale.amount_paid === undefined
+      ? Number(sale.total_amount || 0) - Number(sale.amount_due || 0)
+      : Number(sale.amount_paid || 0);
+    return [String(sale.id), Math.max(paidAmount, 0)];
+  }));
+  const remainingEggPayments = new Map((eggSales || []).map((sale) => [
+    String(sale.id),
+    sale.payment_method ? Math.max(Number(sale.total_amount || 0), 0) : 0,
+  ]));
+  const adjustmentsByAccount = new Map();
+  const validTransactions = [];
+  const ignoredTransactions = [];
+  const orderedTransactions = (transactions || []).map((transaction, index) => ({ transaction, index }))
+    .sort((left, right) => {
+      const leftPriority = left.transaction.reference_type === 'sale' ? 0 : 1;
+      const rightPriority = right.transaction.reference_type === 'sale' ? 0 : 1;
+      return leftPriority - rightPriority || left.index - right.index;
+    });
+
+  for (const { transaction } of orderedTransactions) {
+    const originalAmount = Math.max(Number(transaction.amount || 0), 0);
+    const referenceType = String(transaction.reference_type || '');
+    const referenceId = String(transaction.reference_id || '');
+    let acceptedAmount = originalAmount;
+
+    if (referenceType === 'sale') {
+      const sale = chickenById.get(referenceId);
+      const available = remainingChickenPayments.get(referenceId) || 0;
+      acceptedAmount = sale ? Math.min(originalAmount, available) : 0;
+      if (sale) remainingChickenPayments.set(referenceId, available - acceptedAmount);
+    } else if (referenceType === 'sale_payment' && paymentsById !== null) {
+      const payment = paymentsById.get(referenceId);
+      const saleId = String(payment?.sale_id || '');
+      const sale = chickenById.get(saleId);
+      const available = remainingChickenPayments.get(saleId) || 0;
+      const paymentAmount = Math.max(Number(payment?.amount_paid || 0), 0);
+      acceptedAmount = payment && sale ? Math.min(originalAmount, paymentAmount, available) : 0;
+      if (payment && sale) remainingChickenPayments.set(saleId, available - acceptedAmount);
+    } else if (referenceType === 'egg_sale') {
+      const sale = eggsById.get(referenceId);
+      const available = remainingEggPayments.get(referenceId) || 0;
+      acceptedAmount = sale?.payment_method ? Math.min(originalAmount, available) : 0;
+      if (sale?.payment_method) remainingEggPayments.set(referenceId, available - acceptedAmount);
+    }
+
+    const ignoredAmount = originalAmount - acceptedAmount;
+    if (ignoredAmount > 0) {
+      const accountId = String(transaction.account_id || '');
+      const direction = transaction.direction === 'out' ? -1 : 1;
+      adjustmentsByAccount.set(accountId, (adjustmentsByAccount.get(accountId) || 0) + direction * ignoredAmount);
+      ignoredTransactions.push({ ...transaction, ignored_amount: ignoredAmount });
+    }
+
+    if (acceptedAmount > 0 || originalAmount === 0) {
+      validTransactions.push(acceptedAmount === originalAmount
+        ? transaction
+        : { ...transaction, amount: acceptedAmount });
+    }
+  }
+
+  const correctedAccounts = (accounts || []).map((account) => ({
+    ...account,
+    current_balance: Number((Number(account.current_balance || 0)
+      - Number(adjustmentsByAccount.get(String(account.id)) || 0)).toFixed(2)),
+  }));
+
+  return {
+    accounts: correctedAccounts,
+    transactions: validTransactions,
+    ignoredTransactions,
+    ignoredAmount: ignoredTransactions.reduce((total, transaction) => total + Number(transaction.ignored_amount || 0), 0),
+  };
+}
+
 export async function getReceivablesSummary() {
   const { data, error } = await supabase
     .from('receivables_summary')
