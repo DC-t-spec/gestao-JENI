@@ -9,21 +9,27 @@ export async function renderGeneralManagement() {
     dom.pageContent.innerHTML = '<div class="card"><h3>Acesso restrito</h3><p>Área exclusiva para administradores.</p></div>';
     return;
   }
-  const [{ data: s, error }, { data: projects }, { data: dues }, { data: tasks }, { data: profiles }] = await Promise.all([
+  const [{ data: s, error }, { data: projects }, { data: dues }, { data: tasks }, { data: profiles }, { data: chickenSales }, { data: eggSummary }] = await Promise.all([
     supabase.from('company_financial_summary').select('*').single(),
     supabase.from('company_projects').select('*').order('received_date', { ascending: false }),
     supabase.from('partner_dues').select('*').order('payment_date', { ascending: false }),
     supabase.from('company_tasks').select('*, profiles!company_tasks_assigned_to_fkey(full_name,email)').order('due_date'),
     supabase.from('profiles').select('id,full_name,email').eq('is_active', true).order('full_name'),
+    supabase.from('sales').select('total_amount'),
+    supabase.from('egg_business_summary').select('*').single(),
   ]);
   if (error) {
     dom.pageContent.innerHTML = `<div class="card"><h3>Configuração necessária</h3><p>Execute a actualização SQL no Supabase.</p><div class="feedback error">${error.message}</div></div>`;
     return;
   }
   const userOptions = (profiles || []).map(p => `<option value="${p.id}">${p.full_name || p.email}</option>`).join('');
+  const chickenRevenue = (chickenSales || []).reduce((total, sale) => total + Number(sale.total_amount || 0), 0);
+  const eggRevenue = Number(eggSummary?.egg_revenue || 0);
   dom.pageContent.innerHTML = `<div class="grid gap-14">
     <div class="dashboard-grid">
       <div class="card stat"><h4>Receita da avicultura</h4><strong>${formatMoney(s.poultry_revenue)}</strong></div>
+      <div class="card stat"><h4>Receita de frangos</h4><strong>${formatMoney(chickenRevenue)}</strong></div>
+      <div class="card stat"><h4>Receita de ovos</h4><strong>${formatMoney(eggRevenue)}</strong></div>
       <div class="card stat"><h4>Ganhos de projectos</h4><strong>${formatMoney(s.project_income)}</strong></div>
       <div class="card stat"><h4>Quotas dos sócios</h4><strong>${formatMoney(s.partner_dues)}</strong></div>
       <div class="card stat"><h4>Receita geral</h4><strong>${formatMoney(s.total_income)}</strong></div>

@@ -17,6 +17,65 @@ const app = document.querySelector('#management-app');
 const content = document.querySelector('#management-content');
 let profile;
 
+function currentMonthDates() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth();
+  const pad = (value) => String(value).padStart(2, '0');
+  const lastDay = new Date(year, month + 1, 0).getDate();
+  return { start: `${year}-${pad(month + 1)}-01`, end: `${year}-${pad(month + 1)}-${pad(lastDay)}` };
+}
+
+function sumRows(rows, field = 'total_amount') {
+  return (rows || []).reduce((sum, row) => sum + Number(row?.[field] || 0), 0);
+}
+
+async function getPoultrySnapshot(range = currentMonthDates()) {
+  const [eggsResult, birdsResult, chickenSalesResult, eggSalesResult, purchasesResult, accountsResult, transactionsResult] = await Promise.all([
+    supabase.from('egg_business_summary').select('*').single(),
+    supabase.from('dashboard_summary').select('*').single(),
+    supabase.from('sales').select('id, sale_date, customer_name, total_amount, amount_paid, amount_due, payment_status'),
+    supabase.from('egg_sales').select('id, sale_date, customer_name, total_amount, payment_method'),
+    supabase.from('purchases').select('id, purchase_date, item_name, total_amount').gte('purchase_date', range.start).lte('purchase_date', range.end),
+    supabase.from('financial_account_balances').select('*').eq('is_active', true),
+    supabase.from('financial_transactions').select('*').gte('transaction_date', range.start).lte('transaction_date', range.end).order('transaction_date', { ascending: false }),
+  ]);
+
+  const essentialError = eggsResult.error || birdsResult.error || chickenSalesResult.error || eggSalesResult.error || purchasesResult.error;
+  if (essentialError) throw essentialError;
+  if (accountsResult.error) console.warn('Não foi possível carregar contas da avicultura:', accountsResult.error.message);
+  if (transactionsResult.error) console.warn('Não foi possível carregar movimentos da avicultura:', transactionsResult.error.message);
+
+  const chickens = chickenSalesResult.data || [];
+  const eggSales = eggSalesResult.data || [];
+  const inRange = (sale) => sale.sale_date >= range.start && sale.sale_date <= range.end;
+  const periodChickenSales = chickens.filter(inRange);
+  const periodEggSales = eggSales.filter(inRange);
+  const pendingChickenSales = chickens.filter((sale) => Number(sale.amount_due || 0) > 0);
+  const pendingEggSales = eggSales.filter((sale) => !sale.payment_method);
+  const poultryAccounts = accountsResult.data || [];
+
+  return {
+    eggs: eggsResult.data || {},
+    birds: birdsResult.data || {},
+    chickenSales: chickens,
+    eggSales,
+    pendingChickenSales,
+    pendingEggSales,
+    chickenRevenue: sumRows(chickens),
+    eggRevenue: sumRows(eggSales),
+    periodChickenRevenue: sumRows(periodChickenSales),
+    periodEggRevenue: sumRows(periodEggSales),
+    periodPurchases: sumRows(purchasesResult.data),
+    chickenReceivable: sumRows(pendingChickenSales, 'amount_due'),
+    eggReceivable: sumRows(pendingEggSales),
+    accounts: poultryAccounts,
+    availableBalance: sumRows(poultryAccounts, 'current_balance'),
+    transactions: transactionsResult.data || [],
+    range,
+  };
+}
+
 function validIdentity(value) {
   const text = String(value ?? '').trim();
   return text && !['null', 'undefined'].includes(text.toLowerCase()) ? text : '';
@@ -69,6 +128,7 @@ async function renderDirection() {
     <div class="dashboard-grid">
       ${stat('Receitas institucionais',money(s.institutional_income))}${stat('Despesas institucionais',money(s.institutional_expenses))}
       ${stat('Saldo institucional',money(s.institutional_balance))}${stat('Receita da avicultura',money(Number(s.chicken_revenue)+Number(s.egg_revenue)))}
+      ${stat('Receita de frangos',money(s.chicken_revenue))}${stat('Receita de ovos',money(s.egg_revenue))}
       ${stat('Ganhos de projectos',money(s.project_income))}${stat('Quotas recebidas',money(s.partner_dues_income))}
       ${stat('Candidaturas activas',s.active_applications)}${stat('Tarefas pendentes',`${s.pending_tasks} (${s.overdue_tasks} atrasadas)`)}
     </div>
@@ -119,7 +179,7 @@ async function renderRecords(department) {
 
 
 async function renderFinance() {
-  const [{data:s,error},{data:accounts},{data:projects},{data:transactions},{data:obligations},{data:budgets},{data:transfers},{data:advances}] = await Promise.all([
+  const [{data:s,error},{data:accounts},{data:projects},{data:transactions},{data:obligations},{data:budgets},{data:transfers},{data:advances},poultry] = await Promise.all([
     supabase.from('finance_summary').select('*').single(),
     supabase.from('finance_account_balances').select('*').order('account_name'),
     supabase.from('company_projects').select('id,project_name').order('project_name'),
@@ -127,24 +187,34 @@ async function renderFinance() {
     supabase.from('finance_obligations').select('*').order('due_date').limit(50),
     supabase.from('finance_budget_execution').select('*').order('period_start',{ascending:false}).limit(30),
     supabase.from('finance_transfers_display').select('*').order('transfer_date',{ascending:false}).limit(30),
-    supabase.from('finance_advances').select('*').order('request_date',{ascending:false}).limit(30)
+    supabase.from('finance_advances').select('*').order('request_date',{ascending:false}).limit(30),
+    getPoultrySnapshot(),
   ]);
   if(error)return showError(error);
+  const consolidatedBalance=Number(s.total_balance||0)+poultry.availableBalance;
+  const consolidatedIncome=Number(s.month_income||0)+poultry.periodChickenRevenue+poultry.periodEggRevenue;
+  const consolidatedExpenses=Number(s.month_expenses||0)+poultry.periodPurchases;
+  const consolidatedReceivable=Number(s.total_receivable||0)+poultry.chickenReceivable+poultry.eggReceivable;
   const accountOpts=(accounts||[]).filter(a=>a.is_active).map(a=>`<option value="${a.id}">${a.account_name} — ${money(a.current_balance)}</option>`).join('');
   const projectOpts=(projects||[]).map(p=>`<option value="${p.id}">${p.project_name}</option>`).join('');
   const obligationOpts=(obligations||[]).filter(o=>!['paid','cancelled'].includes(o.status)).map(o=>`<option value="${o.id}">${o.description} — falta ${money(Number(o.total_amount)-Number(o.paid_amount))}</option>`).join('');
   const depts='<option value="direccao">Direcção</option><option value="financeiro">Financeiro</option><option value="projectos">Projectos</option><option value="marketing">Marketing</option><option value="artistas">Agência de Artistas</option><option value="avicultura">Avicultura</option><option value="tarefas">Tarefas e Agenda</option><option value="recursos-humanos">Recursos Humanos</option>';
   content.innerHTML=`<div class="grid gap-14">
-    <div class="dashboard-grid">${stat('Saldo geral',money(s.total_balance))}${stat('Receitas do mês',money(s.month_income))}
-      ${stat('Despesas do mês',money(s.month_expenses))}${stat('Resultado do mês',money(s.month_result))}
-      ${stat('A receber',money(s.total_receivable))}${stat('A pagar',money(s.total_payable))}
+    <div class="dashboard-grid">${stat('Saldo geral',money(consolidatedBalance))}${stat('Receitas do mês',money(consolidatedIncome))}
+      ${stat('Receitas institucionais',money(s.month_income))}${stat('Receita de frangos do mês',money(poultry.periodChickenRevenue))}
+      ${stat('Receita de ovos do mês',money(poultry.periodEggRevenue))}${stat('Despesas do mês',money(consolidatedExpenses))}
+      ${stat('Despesas da avicultura',money(poultry.periodPurchases))}${stat('Resultado do mês',money(consolidatedIncome-consolidatedExpenses))}
+      ${stat('Saldo da avicultura',money(poultry.availableBalance))}${stat('A receber',money(consolidatedReceivable))}
+      ${stat('Frangos por receber',money(poultry.chickenReceivable))}${stat('Ovos por receber',money(poultry.eggReceivable))}
+      ${stat('A pagar',money(s.total_payable))}
       ${stat('Orçamento disponível',money(s.available_budget))}${stat('Adiantamentos pendentes',money(s.pending_advances))}</div>
     <div class="card"><h3>Caixa e contas bancárias</h3><form id="finance-account-form" class="form-grid">
       <input name="account_name" placeholder="Nome da conta ou caixa" required><select name="account_type"><option value="cash">Caixa</option><option value="bank">Conta bancária</option><option value="mobile_money">Carteira móvel</option><option value="other">Outra</option></select>
       <input name="institution_name" placeholder="Banco/instituição"><input name="account_reference" placeholder="Número ou referência">
       <input type="number" name="opening_balance" step="0.01" placeholder="Saldo inicial"><input name="currency" value="MZN" placeholder="Moeda">
       <button class="btn btn-primary">Criar conta</button></form><div id="finance-account-feedback"></div>
-      ${actionTable(['Conta','Tipo','Instituição','Saldo','Estado','Acções'],(accounts||[]).map(a=>[a.account_name,a.account_type,a.institution_name||'-',money(a.current_balance),a.is_active?'Activa':'Inactiva',actions('finance_accounts',a.id,true)]))}</div>
+      ${actionTable(['Conta','Tipo','Instituição','Saldo','Estado','Acções'],(accounts||[]).map(a=>[a.account_name,a.account_type,a.institution_name||'-',money(a.current_balance),a.is_active?'Activa':'Inactiva',actions('finance_accounts',a.id,true)]))}
+      <h4>Contas e carteiras da avicultura</h4>${simpleTable(['Conta','Tipo','Saldo'],poultry.accounts.map(a=>[a.name||'-',a.type||'-',money(a.current_balance)]))}</div>
     <div class="card"><h3>Novo movimento financeiro</h3><form id="finance-transaction-form" class="form-grid">
       <input type="date" name="transaction_date" required><select name="direction"><option value="income">Receita</option><option value="expense">Despesa</option></select>
       <input name="category" placeholder="Categoria: salário, transporte, honorário…" required><select name="department">${depts}</select>
@@ -187,7 +257,14 @@ async function renderFinance() {
       <input type="url" name="document_url" placeholder="Documento/comprovativo"><textarea name="purpose" placeholder="Finalidade" required></textarea>
       <button class="btn btn-primary">Guardar</button></form><div id="finance-advance-feedback"></div></div>
     <div class="card"><h3>Contas a pagar e receber</h3>${actionTable(['Vencimento','Tipo','Entidade','Descrição','Total','Pago','Saldo','Estado','Acções'],(obligations||[]).map(o=>[o.due_date,o.obligation_type==='payable'?'A pagar':'A receber',o.entity_name,o.description,money(o.total_amount),money(o.paid_amount),money(Number(o.total_amount)-Number(o.paid_amount)),o.status,actions('finance_obligations',o.id)]))}</div>
+    <div class="card"><h3>Vendas da avicultura por receber</h3>${simpleTable(['Origem','Data','Cliente','Valor em falta'],[
+      ...poultry.pendingChickenSales.map(sale=>['Frangos',sale.sale_date,sale.customer_name||'-',money(sale.amount_due)]),
+      ...poultry.pendingEggSales.map(sale=>['Ovos',sale.sale_date,sale.customer_name||'-',money(sale.total_amount)]),
+    ])}</div>
     <div class="card"><h3>Movimentos recentes</h3>${actionTable(['Data','Tipo','Categoria','Descrição','Departamento','Valor','Aprovação','Acções'],(transactions||[]).map(t=>[t.transaction_date,t.direction==='income'?'Receita':'Despesa',t.category,t.description,t.department||'-',money(t.amount),t.approval_status||'approved',actions('institutional_transactions',t.id)]))}</div>
+    <div class="card"><h3>Movimentos financeiros da avicultura</h3>${simpleTable(['Data','Tipo','Descrição','Conta','Valor'],poultry.transactions.map(t=>[
+      t.transaction_date,t.direction==='in'?'Entrada':'Saída',t.description||'-',poultry.accounts.find(account=>account.id===t.account_id)?.name||'-',money(t.amount),
+    ]))}</div>
     <div class="card"><h3>Execução orçamental</h3>${simpleTable(['Orçamento','Departamento','Período','Orçamentado','Executado','Disponível'],(budgets||[]).map(b=>[b.title,b.department||'-',b.period_start+' a '+b.period_end,money(b.budget_amount),money(b.spent_amount),money(Number(b.budget_amount)-Number(b.spent_amount))]))}</div>
     <div class="card"><h3>Transferências e adiantamentos</h3>${actionTable(['Data','Registo','Responsável/Origem','Valor','Estado/Destino','Acções'],[...(transfers||[]).map(t=>[t.transfer_date,'Transferência',t.from_account_name||'-',money(t.amount),t.to_account_name||'-',actions('finance_transfers',t.id)]),...(advances||[]).map(a=>[a.request_date,a.advance_type==='advance'?'Adiantamento':'Reembolso',a.beneficiary_name,money(a.amount),a.status,actions('finance_advances',a.id)])])}</div>
   </div>`;
@@ -203,11 +280,23 @@ async function renderFinance() {
 }
 
 async function renderPoultry() {
-  const [{data:eggs,error},{data:birds}] = await Promise.all([
-    supabase.from('egg_business_summary').select('*').single(), supabase.from('dashboard_summary').select('*').single()
-  ]);
-  if(error) return showError(error);
-  content.innerHTML=`<div class="dashboard-grid">${stat('Frangos vivos',birds?.total_birds_alive||0)}${stat('Poedeiras vivas',eggs.layers_alive)}${stat('Stock de ovos',eggs.eggs_in_stock)}${stat('Receita de ovos',money(eggs.egg_revenue))}</div>
+  let poultry;
+  try {
+    poultry = await getPoultrySnapshot();
+  } catch (error) {
+    return showError(error);
+  }
+
+  const eggs=poultry.eggs,birds=poultry.birds;
+  content.innerHTML=`<div class="dashboard-grid">
+    ${stat('Frangos vivos',birds.total_birds_alive||0)}${stat('Mortes de frangos',birds.total_birds_dead||0)}
+    ${stat('Poedeiras vivas',eggs.layers_alive||0)}${stat('Ovos produzidos',eggs.eggs_produced||0)}
+    ${stat('Ovos vendidos',eggs.eggs_sold||0)}${stat('Stock de ovos',eggs.eggs_in_stock||0)}
+    ${stat('Receita de frangos',money(poultry.chickenRevenue))}${stat('Receita de ovos',money(poultry.eggRevenue))}
+    ${stat('Receita total da avicultura',money(poultry.chickenRevenue+poultry.eggRevenue))}
+    ${stat('Frangos por receber',money(poultry.chickenReceivable))}${stat('Ovos por receber',money(poultry.eggReceivable))}
+    ${stat('Despesas do mês',money(poultry.periodPurchases))}${stat('Saldo disponível',money(poultry.availableBalance))}
+  </div>
   <div class="card mt-16"><h3>Gestão operacional</h3><p>Os registos detalhados de compras, frangos, mortalidade, produção e vendas de ovos permanecem no <a href="./index.html"><strong>JENI Frangos</strong></a>.</p></div>`;
 }
 
@@ -551,7 +640,7 @@ function reportDates(period,start,end){
 }
 async function renderGeneralReport(filters={period:'monthly'}) {
   const range=reportDates(filters.period,filters.start,filters.end);
-  const [{data:finance},{data:projects},{data:marketing},{data:artists},{data:poultry},{data:eggs},{data:tasks},{data:hr},{data:transactions},{data:projectRows},{data:campaigns},{data:activities}] = await Promise.all([
+  const [{data:finance},{data:projects},{data:marketing},{data:artists},{data:poultry},{data:eggs},{data:tasks},{data:hr},{data:transactions},{data:projectRows},{data:campaigns},{data:activities},poultrySnapshot] = await Promise.all([
     supabase.from('finance_summary').select('*').single(),supabase.from('projects_summary').select('*').single(),
     supabase.from('marketing_summary').select('*').single(),supabase.from('artist_agency_summary').select('*').single(),
     supabase.from('dashboard_summary').select('*').single(),supabase.from('egg_business_summary').select('*').single(),
@@ -559,10 +648,16 @@ async function renderGeneralReport(filters={period:'monthly'}) {
     supabase.from('institutional_transactions').select('*').gte('transaction_date',range.start).lte('transaction_date',range.end).order('transaction_date',{ascending:false}),
     supabase.from('project_records').select('*').order('created_at',{ascending:false}),
     supabase.from('marketing_campaigns').select('*').order('start_date',{ascending:false}),
-    supabase.from('artist_activities').select('*,artists(artistic_name)').gte('activity_date',range.start).lte('activity_date',range.end).order('activity_date',{ascending:false})
+    supabase.from('artist_activities').select('*,artists(artistic_name)').gte('activity_date',range.start).lte('activity_date',range.end).order('activity_date',{ascending:false}),
+    getPoultrySnapshot(range),
   ]);
-  const tx=transactions||[],periodIncome=tx.filter(t=>t.direction==='income'&&(t.approval_status||'approved')==='approved').reduce((n,t)=>n+Number(t.amount||0),0);
-  const periodExpenses=tx.filter(t=>t.direction==='expense'&&(t.approval_status||'approved')==='approved').reduce((n,t)=>n+Number(t.amount||0),0);
+  const tx=transactions||[];
+  const institutionalIncome=tx.filter(t=>t.direction==='income'&&(t.approval_status||'approved')==='approved').reduce((n,t)=>n+Number(t.amount||0),0);
+  const institutionalExpenses=tx.filter(t=>t.direction==='expense'&&(t.approval_status||'approved')==='approved').reduce((n,t)=>n+Number(t.amount||0),0);
+  const periodIncome=institutionalIncome+poultrySnapshot.periodChickenRevenue+poultrySnapshot.periodEggRevenue;
+  const periodExpenses=institutionalExpenses+poultrySnapshot.periodPurchases;
+  const consolidatedReportBalance=Number(finance?.total_balance||0)+poultrySnapshot.availableBalance;
+  const consolidatedReportReceivables=Number(finance?.total_receivable||0)+poultrySnapshot.chickenReceivable+poultrySnapshot.eggReceivable;
   const dateIn=(v)=>v&&v>=range.start&&v<=range.end;
   const pRows=(projectRows||[]).filter(p=>dateIn(p.start_date)||dateIn(p.due_date)||dateIn((p.created_at||'').slice(0,10)));
   const cRows=(campaigns||[]).filter(c=>dateIn(c.start_date)||dateIn(c.end_date)||dateIn((c.created_at||'').slice(0,10)));
@@ -578,10 +673,12 @@ async function renderGeneralReport(filters={period:'monthly'}) {
         <p><strong>Período:</strong> ${periodLabels[filters.period]} — ${range.start} a ${range.end}</p><p><strong>Gerado em:</strong> ${new Date().toLocaleString('pt-PT')}</p></div>
       <section class="report-section"><h3>1. Resumo executivo</h3><div class="dashboard-grid">
         ${stat('Receitas no período',money(periodIncome))}${stat('Despesas no período',money(periodExpenses))}${stat('Resultado no período',money(periodIncome-periodExpenses))}
+        ${stat('Receita de frangos no período',money(poultrySnapshot.periodChickenRevenue))}${stat('Receita de ovos no período',money(poultrySnapshot.periodEggRevenue))}
         ${stat('Projectos activos',projects?.active_projects||0)}${stat('Campanhas activas',marketing?.active_campaigns||0)}${stat('Artistas activos',artists?.active_artists||0)}
       </div></section>
       <section class="report-section"><h3>2. Financeiro</h3><div class="dashboard-grid">
-        ${stat('Saldo geral',money(finance?.total_balance))}${stat('A receber',money(finance?.total_receivable))}${stat('A pagar',money(finance?.total_payable))}${stat('Orçamento disponível',money(finance?.available_budget))}
+        ${stat('Saldo geral',money(consolidatedReportBalance))}${stat('A receber',money(consolidatedReportReceivables))}${stat('A pagar',money(finance?.total_payable))}${stat('Orçamento disponível',money(finance?.available_budget))}
+        ${stat('Frangos por receber',money(poultrySnapshot.chickenReceivable))}${stat('Ovos por receber',money(poultrySnapshot.eggReceivable))}
       </div>${simpleTable(['Data','Tipo','Categoria','Descrição','Valor'],tx.slice(0,30).map(t=>[t.transaction_date,t.direction==='income'?'Receita':'Despesa',t.category,t.description,money(t.amount)]))}</section>
       <section class="report-section"><h3>3. Projectos e candidaturas</h3><div class="dashboard-grid">
         ${stat('Projectos activos',projects?.active_projects||0)}${stat('Candidaturas em preparação',projects?.active_applications||0)}${stat('Orçamento aprovado',money(projects?.approved_funding))}${stat('Despesas',money(projects?.total_expenses))}
@@ -595,7 +692,9 @@ async function renderGeneralReport(filters={period:'monthly'}) {
       </div>${simpleTable(['Data','Artista','Actividade','Bruto','Ganho JENI'],(activities||[]).slice(0,25).map(a=>[a.activity_date,a.artists?.artistic_name||'-',a.title,money(a.gross_amount),money(a.jeni_income)]))}</section>
       <section class="report-section"><h3>6. Avicultura</h3><div class="dashboard-grid">
         ${stat('Frangos vivos',poultry?.total_birds_alive||0)}${stat('Poedeiras vivas',eggs?.layers_alive||0)}${stat('Ovos em stock',eggs?.eggs_in_stock||0)}
-        ${stat('Receita de frangos',money(poultry?.total_revenue))}${stat('Receita de ovos',money(eggs?.egg_revenue))}${stat('Mortalidade',poultry?.total_mortality||0)}
+        ${stat('Receita de frangos',money(poultrySnapshot.periodChickenRevenue))}${stat('Receita de ovos',money(poultrySnapshot.periodEggRevenue))}
+        ${stat('Receita total da avicultura',money(poultrySnapshot.periodChickenRevenue+poultrySnapshot.periodEggRevenue))}
+        ${stat('Despesas da avicultura',money(poultrySnapshot.periodPurchases))}${stat('Mortalidade',poultry?.total_birds_dead||poultry?.total_mortality||0)}
       </div></section>
       <section class="report-section"><h3>7. Tarefas e Agenda</h3><div class="dashboard-grid">
         ${stat('Tarefas abertas',tasks?.open_tasks||0)}${stat('Tarefas concluídas',tasks?.completed_tasks||0)}${stat('Tarefas atrasadas',tasks?.overdue_tasks||0)}${stat('Agenda da semana',tasks?.events_week||0)}

@@ -34,23 +34,29 @@ export async function renderReports() {
 
     const [
       { data: sales, error: salesError },
+      { data: eggSales, error: eggSalesError },
       { data: purchases, error: purchasesError },
       { data: mortality, error: mortalityError },
       { data: transactions, error: transactionsError },
     ] = await Promise.all([
       supabase.from('sales_financial_report').select('*').gte('sale_date', startDate).lte('sale_date', endDate).order('sale_date', { ascending: false }),
+      supabase.from('egg_sales').select('*').gte('sale_date', startDate).lte('sale_date', endDate).order('sale_date', { ascending: false }),
       supabase.from('purchases').select('*').gte('purchase_date', startDate).lte('purchase_date', endDate).order('purchase_date', { ascending: false }),
       supabase.from('mortality_logs').select('*').gte('log_date', startDate).lte('log_date', endDate).order('log_date', { ascending: false }),
       supabase.from('financial_transactions').select('*').gte('transaction_date', startDate).lte('transaction_date', endDate).order('transaction_date', { ascending: false }),
     ]);
 
-    if (salesError || purchasesError || mortalityError || transactionsError) {
-      return showFeedback(feedback, salesError?.message || purchasesError?.message || mortalityError?.message || transactionsError?.message, 'error');
+    if (salesError || eggSalesError || purchasesError || mortalityError || transactionsError) {
+      return showFeedback(feedback, salesError?.message || eggSalesError?.message || purchasesError?.message || mortalityError?.message || transactionsError?.message, 'error');
     }
 
     const totalBase = (sales || []).reduce((sum, row) => sum + Number(row.taxable_base || 0), 0);
     const totalVat = (sales || []).reduce((sum, row) => sum + Number(row.vat_amount || 0), 0);
-    const totalSales = (sales || []).reduce((sum, row) => sum + Number(row.total_amount || 0), 0);
+    const chickenSalesTotal = (sales || []).reduce((sum, row) => sum + Number(row.total_amount || 0), 0);
+    const eggSalesTotal = (eggSales || []).reduce((sum, row) => sum + Number(row.total_amount || 0), 0);
+    const totalSales = chickenSalesTotal + eggSalesTotal;
+    const chickenAmountDue = (sales || []).reduce((sum, row) => sum + Number(row.amount_due || 0), 0);
+    const eggAmountDue = (eggSales || []).filter((row) => !row.payment_method).reduce((sum, row) => sum + Number(row.total_amount || 0), 0);
     const totalPurchases = (purchases || []).reduce((sum, row) => sum + Number(row.total_amount || 0), 0);
     const totalDeaths = (mortality || []).reduce((sum, row) => sum + Number(row.quantity_dead || 0), 0);
     const balance = totalSales - totalPurchases;
@@ -69,6 +75,10 @@ export async function renderReports() {
         <div class="card stat"><h4>Base tributável</h4><strong>${formatMoney(totalBase)}</strong></div>
         <div class="card stat"><h4>Total IVA</h4><strong>${formatMoney(totalVat)}</strong></div>
         <div class="card stat"><h4>Total vendas</h4><strong>${formatMoney(totalSales)}</strong></div>
+        <div class="card stat"><h4>Vendas de frangos</h4><strong>${formatMoney(chickenSalesTotal)}</strong></div>
+        <div class="card stat"><h4>Vendas de ovos</h4><strong>${formatMoney(eggSalesTotal)}</strong></div>
+        <div class="card stat"><h4>Frangos por receber</h4><strong>${formatMoney(chickenAmountDue)}</strong></div>
+        <div class="card stat"><h4>Ovos por receber</h4><strong>${formatMoney(eggAmountDue)}</strong></div>
         <div class="card stat"><h4>Total compras</h4><strong>${formatMoney(totalPurchases)}</strong></div>
         <div class="card stat"><h4>Saldo do período</h4><strong>${formatMoney(balance)}</strong></div>
         <div class="card stat"><h4>Entradas de caixa real</h4><strong>${formatMoney(cashIn)}</strong></div>
@@ -78,7 +88,7 @@ export async function renderReports() {
       </div>
 
       <div class="card mt-16">
-        <h3>Vendas do período</h3>
+        <h3>Vendas de frangos do período</h3>
         <div class="table-wrap">
           <table>
             <thead><tr><th>Data</th><th>Cliente</th><th>Qtd</th><th>Base</th><th>Taxa IVA</th><th>IVA</th><th>Total</th></tr></thead>
@@ -86,6 +96,20 @@ export async function renderReports() {
               ${(sales || []).map((row) => `
                 <tr><td>${row.sale_date || ''}</td><td>${row.customer_name || ''}</td><td>${row.quantity || ''}</td><td>${formatMoney(row.taxable_base || 0)}</td><td>${row.apply_vat ? Number(row.vat_rate || 0).toFixed(2) + '%' : 'Sem IVA'}</td><td>${formatMoney(row.vat_amount || 0)}</td><td><strong>${formatMoney(row.total_amount || 0)}</strong></td></tr>
               `).join('') || '<tr><td colspan="7">Sem vendas no período.</td></tr>'}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card mt-16">
+        <h3>Vendas de ovos do período</h3>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Data</th><th>Cliente</th><th>Forma</th><th>Quantidade</th><th>Ovos</th><th>Pagamento</th><th>Total</th></tr></thead>
+            <tbody>
+              ${(eggSales || []).map((row) => `
+                <tr><td>${row.sale_date || ''}</td><td>${row.customer_name || ''}</td><td>${row.sale_unit === 'tray' ? 'Bandeja' : 'Unidade'}</td><td>${row.quantity || 0}</td><td>${row.egg_quantity || 0}</td><td>${row.payment_method ? 'Pago' : 'Pendente'}</td><td><strong>${formatMoney(row.total_amount || 0)}</strong></td></tr>
+              `).join('') || '<tr><td colspan="7">Sem vendas de ovos no período.</td></tr>'}
             </tbody>
           </table>
         </div>
