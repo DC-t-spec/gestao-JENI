@@ -112,6 +112,7 @@ export async function renderDashboard() {
   const [
     { data: stockData },
     { data: eggSummary },
+    { data: chickenAllSales },
     { data: chickenMonthSales },
     { data: eggMonthSales },
     { data: pendingEggSales },
@@ -126,6 +127,9 @@ export async function renderDashboard() {
       .from('egg_business_summary')
       .select('*')
       .single(),
+    supabase
+      .from('sales')
+      .select('total_amount'),
     supabase
       .from('sales')
       .select('total_amount')
@@ -182,6 +186,7 @@ export async function renderDashboard() {
 
   const chickenMonthRevenue = sumAmounts(chickenMonthSales);
   const eggMonthRevenue = sumAmounts(eggMonthSales);
+  const chickenAccumulatedRevenue = sumAmounts(chickenAllSales);
   const totalMonthRevenue = chickenMonthRevenue + eggMonthRevenue;
   const pendingEggAmount = sumAmounts(pendingEggSales);
   const totalReceivables = Number(receivables?.total_due || 0) + pendingEggAmount;
@@ -272,6 +277,7 @@ export async function renderDashboard() {
           <div class="card stat"><h4>Ovos produzidos</h4><strong>${formatNumber(eggSummary?.eggs_produced || 0)}</strong></div>
           <div class="card stat"><h4>Ovos vendidos</h4><strong>${formatNumber(eggSummary?.eggs_sold || 0)}</strong></div>
           <div class="card stat"><h4>Stock de ovos</h4><strong>${formatNumber(eggSummary?.eggs_in_stock || 0)}</strong></div>
+          <div class="card stat"><h4>Receita acumulada de frangos</h4><strong>${formatMoney(chickenAccumulatedRevenue)}</strong></div>
           <div class="card stat"><h4>Receita acumulada de ovos</h4><strong>${formatMoney(eggSummary?.egg_revenue || 0)}</strong></div>
         </div>
       </div>
