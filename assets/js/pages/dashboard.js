@@ -114,6 +114,7 @@ export async function renderDashboard() {
     { data: eggSummary },
     { data: chickenMonthSales },
     { data: eggMonthSales },
+    { data: pendingEggSales },
     receivables,
     activeAccounts,
   ] = await Promise.all([
@@ -135,6 +136,10 @@ export async function renderDashboard() {
       .select('total_amount')
       .gte('sale_date', monthStart)
       .lt('sale_date', nextMonthStart),
+    supabase
+      .from('egg_sales')
+      .select('id, total_amount')
+      .is('payment_method', null),
     getReceivablesSummary().catch(() => null),
     getActiveFinancialAccounts().catch(() => []),
   ]);
@@ -178,6 +183,9 @@ export async function renderDashboard() {
   const chickenMonthRevenue = sumAmounts(chickenMonthSales);
   const eggMonthRevenue = sumAmounts(eggMonthSales);
   const totalMonthRevenue = chickenMonthRevenue + eggMonthRevenue;
+  const pendingEggAmount = sumAmounts(pendingEggSales);
+  const totalReceivables = Number(receivables?.total_due || 0) + pendingEggAmount;
+  const totalPendingSales = Number(data.total_pending_sales || 0) + (pendingEggSales || []).length;
   const monthPurchases = Number(data.month_purchases || 0);
   const realMonthCashBalance = monthTransactionsError
     ? Number(data.real_month_cash_balance || 0) + eggMonthRevenue
@@ -249,8 +257,9 @@ export async function renderDashboard() {
       <div class="card">
         <div class="section-title"><div><h3>Contas a Receber</h3><div class="muted">Resumo de recebimentos pendentes</div></div></div>
         <div class="dashboard-grid">
-          <div class="card stat"><h4>Total por receber</h4><strong>${formatMoney(receivables?.total_due || 0)}</strong></div>
-          <div class="card stat"><h4>Vendas pendentes</h4><strong>${formatNumber(data.total_pending_sales || 0)}</strong></div>
+          <div class="card stat"><h4>Total por receber</h4><strong>${formatMoney(totalReceivables)}</strong></div>
+          <div class="card stat"><h4>Ovos por receber</h4><strong>${formatMoney(pendingEggAmount)}</strong></div>
+          <div class="card stat"><h4>Vendas pendentes</h4><strong>${formatNumber(totalPendingSales)}</strong></div>
         </div>
       </div>
 

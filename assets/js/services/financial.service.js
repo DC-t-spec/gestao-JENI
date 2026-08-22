@@ -134,6 +134,7 @@ export async function reconcileEggSaleTransactions(accounts = null) {
 
   for (const sale of eggSales || []) {
     if (recordedSaleIds.has(String(sale.id))) continue;
+    if (!sale.payment_method) continue;
 
     const account = findAccountByPaymentMethod(activeAccounts, sale.payment_method);
     if (!account) {
