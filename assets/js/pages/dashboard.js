@@ -21,6 +21,24 @@ function normalizeAccountBalancesByType(accounts) {
   }, {});
 }
 
+function getCurrentMonthRange() {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = now.getMonth() + 1;
+  const nextMonth = month === 12 ? 1 : month + 1;
+  const nextYear = month === 12 ? year + 1 : year;
+  const pad = (value) => String(value).padStart(2, '0');
+
+  return {
+    start: `${year}-${pad(month)}-01`,
+    end: `${nextYear}-${pad(nextMonth)}-01`,
+  };
+}
+
+function sumAmounts(rows, field = 'total_amount') {
+  return (rows || []).reduce((sum, row) => sum + Number(row?.[field] || 0), 0);
+}
+
 function openFinancialModal({ title, fields, submitLabel, onSubmit }) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -83,16 +101,40 @@ function openFinancialModal({ title, fields, submitLabel, onSubmit }) {
 export async function renderDashboard() {
   setPageHeader('Dashboard', 'Resumo financeiro e operacional');
 
+  const { start: monthStart, end: nextMonthStart } = getCurrentMonthRange();
+
   const { data, error } = await supabase
     .from('dashboard_summary')
     .select('*')
     .single();
 
-  const [{ data: stockData }, financialBalances, receivables, activeAccounts] = await Promise.all([
+  const [
+    { data: stockData },
+    { data: eggSummary },
+    { data: chickenMonthSales },
+    { data: eggMonthSales },
+    financialBalances,
+    receivables,
+    activeAccounts,
+  ] = await Promise.all([
     supabase
       .from('batch_stock_summary')
       .select('*')
       .order('start_date', { ascending: false }),
+    supabase
+      .from('egg_business_summary')
+      .select('*')
+      .single(),
+    supabase
+      .from('sales')
+      .select('total_amount')
+      .gte('sale_date', monthStart)
+      .lt('sale_date', nextMonthStart),
+    supabase
+      .from('egg_sales')
+      .select('total_amount')
+      .gte('sale_date', monthStart)
+      .lt('sale_date', nextMonthStart),
     getFinancialAccountBalances().catch(() => []),
     getReceivablesSummary().catch(() => null),
     getActiveFinancialAccounts().catch(() => []),
@@ -116,6 +158,10 @@ export async function renderDashboard() {
     0
   );
 
+  const chickenMonthRevenue = sumAmounts(chickenMonthSales);
+  const eggMonthRevenue = sumAmounts(eggMonthSales);
+  const totalMonthRevenue = chickenMonthRevenue + eggMonthRevenue;
+
   dom.pageContent.innerHTML = `
     <div class="grid gap-14">
       <div class="quick-grid">
@@ -134,6 +180,10 @@ export async function renderDashboard() {
         <div class="quick-card" data-quick="mortalidade">
           <strong>Registar morte</strong>
           <span>Atualizar o sistema sempre que houver perda.</span>
+        </div>
+        <div class="quick-card" data-quick="ovos">
+          <strong>Ovos e poedeiras</strong>
+          <span>Registar produção, poedeiras e vendas de ovos.</span>
         </div>
       </div>
 
@@ -162,7 +212,9 @@ export async function renderDashboard() {
       <div class="card">
         <div class="section-title"><div><h3>Resumo do mês</h3><div class="muted">Indicadores executivos mensais</div></div></div>
         <div class="dashboard-grid">
-          <div class="card stat"><h4>Vendas do mês</h4><strong>${formatMoney(data.month_sales)}</strong></div>
+          <div class="card stat"><h4>Vendas totais do mês</h4><strong>${formatMoney(totalMonthRevenue)}</strong></div>
+          <div class="card stat"><h4>Vendas de frangos</h4><strong>${formatMoney(chickenMonthRevenue)}</strong></div>
+          <div class="card stat"><h4>Vendas de ovos</h4><strong>${formatMoney(eggMonthRevenue)}</strong></div>
           <div class="card stat"><h4>Compras do mês</h4><strong>${formatMoney(data.month_purchases)}</strong></div>
           <div class="card stat"><h4>Caixa real do mês</h4><strong>${formatMoney(data.real_month_cash_balance)}</strong></div>
           <div class="card stat"><h4>Saldo do mês</h4><strong>${formatMoney(data.month_balance)}</strong></div>
@@ -180,8 +232,13 @@ export async function renderDashboard() {
       <div class="card">
         <div class="section-title"><div><h3>Operacional</h3><div class="muted">Estado produtivo actual</div></div></div>
         <div class="dashboard-grid">
-          <div class="card stat"><h4>Aves vivas</h4><strong>${formatNumber(data.total_birds_alive)}</strong></div>
-          <div class="card stat"><h4>Mortes acumuladas</h4><strong>${formatNumber(data.total_birds_dead)}</strong></div>
+          <div class="card stat"><h4>Frangos vivos</h4><strong>${formatNumber(data.total_birds_alive)}</strong></div>
+          <div class="card stat"><h4>Mortes de frangos</h4><strong>${formatNumber(data.total_birds_dead)}</strong></div>
+          <div class="card stat"><h4>Poedeiras vivas</h4><strong>${formatNumber(eggSummary?.layers_alive || 0)}</strong></div>
+          <div class="card stat"><h4>Ovos produzidos</h4><strong>${formatNumber(eggSummary?.eggs_produced || 0)}</strong></div>
+          <div class="card stat"><h4>Ovos vendidos</h4><strong>${formatNumber(eggSummary?.eggs_sold || 0)}</strong></div>
+          <div class="card stat"><h4>Stock de ovos</h4><strong>${formatNumber(eggSummary?.eggs_in_stock || 0)}</strong></div>
+          <div class="card stat"><h4>Receita acumulada de ovos</h4><strong>${formatMoney(eggSummary?.egg_revenue || 0)}</strong></div>
         </div>
       </div>
 
