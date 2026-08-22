@@ -247,42 +247,18 @@ export async function renderSettings() {
 }
 
 async function clearChickenSales() {
-  const [salesResult, paymentsResult, transactionsResult] = await Promise.all([
-    supabase.from('sales').select('id'),
-    supabase.from('sale_payments').select('id'),
-    supabase.from('financial_transactions').select('id').in('reference_type', ['sale', 'sale_payment']),
-  ]);
+  const { data: removed, error: cleanupError } = await supabase.rpc('clear_chicken_sales');
 
-  if (salesResult.error) throw salesResult.error;
-  if (paymentsResult.error) throw paymentsResult.error;
-  if (transactionsResult.error) throw transactionsResult.error;
+  if (cleanupError) {
+    const missingFunction = cleanupError.code === 'PGRST202'
+      || cleanupError.code === '42883'
+      || /clear_chicken_sales|schema cache/i.test(cleanupError.message || '');
 
-  const saleIds = (salesResult.data || []).map((sale) => sale.id).filter(Boolean);
-  const paymentIds = (paymentsResult.data || []).map((payment) => payment.id).filter(Boolean);
-  const transactionIds = (transactionsResult.data || []).map((transaction) => transaction.id).filter(Boolean);
+    if (missingFunction) {
+      throw new Error('A função administrativa ainda não está instalada no Supabase. Execute o ficheiro supabase/20260822_limpeza_segura_vendas_frangos.sql no SQL Editor e repita a operação.');
+    }
 
-  if (transactionIds.length) {
-    const { error: transactionsError } = await supabase
-      .from('financial_transactions')
-      .delete()
-      .in('id', transactionIds);
-    if (transactionsError) throw transactionsError;
-  }
-
-  if (paymentIds.length) {
-    const { error: paymentsError } = await supabase
-      .from('sale_payments')
-      .delete()
-      .in('id', paymentIds);
-    if (paymentsError) throw paymentsError;
-  }
-
-  if (saleIds.length) {
-    const { error: salesError } = await supabase
-      .from('sales')
-      .delete()
-      .in('id', saleIds);
-    if (salesError) throw salesError;
+    throw cleanupError;
   }
 
   const [remainingSales, remainingPayments, remainingTransactions] = await Promise.all([
@@ -300,5 +276,9 @@ async function clearChickenSales() {
     throw new Error(`A limpeza não ficou completa. Ainda existem ${(remainingSales.data || []).length} venda(s), ${(remainingPayments.data || []).length} pagamento(s) e ${(remainingTransactions.data || []).length} movimento(s) financeiro(s).`);
   }
 
-  return { sales: saleIds.length, payments: paymentIds.length, transactions: transactionIds.length };
+  return {
+    sales: Number(removed?.sales || 0),
+    payments: Number(removed?.payments || 0),
+    transactions: Number(removed?.transactions || 0),
+  };
 }
