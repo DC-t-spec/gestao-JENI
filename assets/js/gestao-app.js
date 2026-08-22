@@ -66,6 +66,10 @@ async function getPoultrySnapshot(range = currentMonthDates()) {
   const poultryAccounts = validatedFinances.accounts;
   const periodTransactions = validatedFinances.transactions.filter((transaction) =>
     transaction.transaction_date >= range.start && transaction.transaction_date <= range.end);
+  const periodChickenReceived=sumRows(periodTransactions.filter(transaction=>
+    transaction.direction==='in'&&['sale','sale_payment'].includes(transaction.reference_type)),'amount');
+  const periodEggReceived=sumRows(periodTransactions.filter(transaction=>
+    transaction.direction==='in'&&transaction.reference_type==='egg_sale'),'amount');
 
   return {
     eggs: eggsResult.data || {},
@@ -78,6 +82,8 @@ async function getPoultrySnapshot(range = currentMonthDates()) {
     eggRevenue: sumRows(eggSales),
     periodChickenRevenue: sumRows(periodChickenSales),
     periodEggRevenue: sumRows(periodEggSales),
+    periodChickenReceived,
+    periodEggReceived,
     periodPurchases: sumRows(purchasesResult.data),
     chickenReceivable: sumRows(pendingChickenSales, 'amount_due'),
     eggReceivable: sumRows(pendingEggSales),
@@ -130,27 +136,52 @@ async function renderDepartment(key) {
 }
 
 async function renderDirection() {
-  const [{data:s,error},{data:partners},{data:dues},{data:finance,error:financeError},poultry] = await Promise.all([
+  const [{data:s,error},{data:partners},{data:dues},{data:finance,error:financeError},poultry,{data:allDues,error:duesError},{data:projects,error:projectsError}] = await Promise.all([
     supabase.from('management_dashboard').select('*').single(),
     supabase.from('partners').select('*').order('full_name'),
     supabase.from('partner_dues').select('*').order('payment_date',{ascending:false}).limit(12),
     supabase.from('finance_summary').select('*').single(),
     getPoultrySnapshot(),
+    supabase.from('partner_dues').select('payment_date,amount'),
+    supabase.from('company_projects').select('received_date,income_amount'),
   ]);
-  if(error||financeError) return showError(error||financeError);
+  if(error||financeError||duesError||projectsError) return showError(error||financeError||duesError||projectsError);
   const systemBalance=Number(finance.total_balance||0)+poultry.availableBalance
     +Number(s.partner_dues_income||0)+Number(s.project_income||0);
   const systemReceivable=Number(finance.total_receivable||0)+poultry.chickenReceivable+poultry.eggReceivable;
+  const inMonth=date=>date>=poultry.range.start&&date<=poultry.range.end;
+  const monthlyDues=sumRows((allDues||[]).filter(due=>inMonth(due.payment_date)),'amount');
+  const monthlyProjects=sumRows((projects||[]).filter(project=>inMonth(project.received_date)),'income_amount');
+  const monthlyIncome=Number(finance.month_income||0)+poultry.periodChickenRevenue+poultry.periodEggRevenue
+    +monthlyDues+monthlyProjects;
+  const monthlyExpenses=Number(finance.month_expenses||0)+poultry.periodPurchases;
+  const chickenReceived=Math.max(poultry.chickenRevenue-poultry.chickenReceivable,0);
+  const eggsReceived=Math.max(poultry.eggRevenue-poultry.eggReceivable,0);
+  const totalRevenue=Number(s.institutional_income||0)+poultry.chickenRevenue+poultry.eggRevenue
+    +Number(s.project_income||0)+Number(s.partner_dues_income||0);
+  const totalReceived=Number(s.institutional_income||0)+chickenReceived+eggsReceived
+    +Number(s.project_income||0)+Number(s.partner_dues_income||0);
   content.innerHTML=`<div class="grid gap-14">
     <div class="dashboard-grid">
-      ${stat('Saldo geral do sistema',money(systemBalance))}${stat('Total por receber',money(systemReceivable))}
-      ${stat('Receitas institucionais',money(s.institutional_income))}${stat('Despesas institucionais',money(s.institutional_expenses))}
-      ${stat('Saldo institucional',money(finance.total_balance))}${stat('Saldo disponível da avicultura',money(poultry.availableBalance))}
-      ${stat('Receita da avicultura',money(Number(s.chicken_revenue)+Number(s.egg_revenue)))}
-      ${stat('Receita de frangos',money(s.chicken_revenue))}${stat('Receita de ovos',money(s.egg_revenue))}
-      ${stat('Ganhos de projectos',money(s.project_income))}${stat('Quotas recebidas',money(s.partner_dues_income))}
-      ${stat('Candidaturas activas',s.active_applications)}${stat('Tarefas pendentes',`${s.pending_tasks} (${s.overdue_tasks} atrasadas)`)}
+      ${stat('Saldo geral do sistema',money(systemBalance))}${stat('Receitas do mês',money(monthlyIncome))}
+      ${stat('Despesas do mês',money(monthlyExpenses))}${stat('Resultado do mês',money(monthlyIncome-monthlyExpenses))}
+      ${stat('Total por receber',money(systemReceivable))}${stat('Total a pagar',money(finance.total_payable))}
     </div>
+    <div class="card"><h3>Resumo por actividade</h3>${simpleTable(['Área','Receita registada','Recebido','Por receber'],[
+      ['Institucional',money(s.institutional_income),money(s.institutional_income),money(finance.total_receivable)],
+      ['Frangos',money(poultry.chickenRevenue),money(chickenReceived),money(poultry.chickenReceivable)],
+      ['Ovos',money(poultry.eggRevenue),money(eggsReceived),money(poultry.eggReceivable)],
+      ['Projectos',money(s.project_income),money(s.project_income),money(0)],
+      ['Quotas',money(s.partner_dues_income),money(s.partner_dues_income),money(0)],
+      ['Total',money(totalRevenue),money(totalReceived),money(systemReceivable)],
+    ])}</div>
+    <div class="card"><h3>Acompanhamento operacional</h3>${simpleTable(['Indicador','Situação'],[
+      ['Candidaturas activas',s.active_applications||0],
+      ['Tarefas pendentes',s.pending_tasks||0],
+      ['Tarefas atrasadas',s.overdue_tasks||0],
+      ['Saldo disponível da avicultura',money(poultry.availableBalance)],
+      ['Saldo institucional',money(finance.total_balance)],
+    ])}</div>
     <div class="split">
       <div class="card"><h3>Novo sócio</h3><form id="partner-form" class="form-grid">
         <input name="full_name" placeholder="Nome completo" required><input type="email" name="email" placeholder="Email">
@@ -225,16 +256,30 @@ async function renderFinance() {
   const projectOpts=(projects||[]).map(p=>`<option value="${p.id}">${p.project_name}</option>`).join('');
   const obligationOpts=(obligations||[]).filter(o=>!['paid','cancelled'].includes(o.status)).map(o=>`<option value="${o.id}">${o.description} — falta ${money(Number(o.total_amount)-Number(o.paid_amount))}</option>`).join('');
   const depts='<option value="direccao">Direcção</option><option value="financeiro">Financeiro</option><option value="projectos">Projectos</option><option value="marketing">Marketing</option><option value="artistas">Agência de Artistas</option><option value="avicultura">Avicultura</option><option value="tarefas">Tarefas e Agenda</option><option value="recursos-humanos">Recursos Humanos</option>';
+  const receivedThisMonth=Number(s.month_income||0)+poultry.periodChickenReceived+poultry.periodEggReceived
+    +monthlyDues+monthlyProjectIncome;
   content.innerHTML=`<div class="grid gap-14">
     <div class="dashboard-grid">${stat('Saldo geral',money(consolidatedBalance))}${stat('Receitas do mês',money(consolidatedIncome))}
-      ${stat('Receitas institucionais',money(s.month_income))}${stat('Receita de frangos do mês',money(poultry.periodChickenRevenue))}
-      ${stat('Receita de ovos do mês',money(poultry.periodEggRevenue))}${stat('Quotas recebidas do mês',money(monthlyDues))}
-      ${stat('Ganhos de projectos do mês',money(monthlyProjectIncome))}${stat('Despesas do mês',money(consolidatedExpenses))}
-      ${stat('Despesas da avicultura',money(poultry.periodPurchases))}${stat('Resultado do mês',money(consolidatedIncome-consolidatedExpenses))}
-      ${stat('Saldo da avicultura',money(poultry.availableBalance))}${stat('A receber',money(consolidatedReceivable))}
-      ${stat('Frangos por receber',money(poultry.chickenReceivable))}${stat('Ovos por receber',money(poultry.eggReceivable))}
-      ${stat('A pagar',money(s.total_payable))}
-      ${stat('Orçamento disponível',money(s.available_budget))}${stat('Adiantamentos pendentes',money(s.pending_advances))}</div>
+      ${stat('Despesas do mês',money(consolidatedExpenses))}${stat('Resultado do mês',money(consolidatedIncome-consolidatedExpenses))}
+      ${stat('A receber',money(consolidatedReceivable))}${stat('A pagar',money(s.total_payable))}</div>
+    <div class="card"><h3>Receitas e recebimentos por actividade</h3>${simpleTable(['Origem','Receita do mês','Recebido no mês','Por receber'],[
+      ['Institucional',money(s.month_income),money(s.month_income),money(s.total_receivable)],
+      ['Frangos',money(poultry.periodChickenRevenue),money(poultry.periodChickenReceived),money(poultry.chickenReceivable)],
+      ['Ovos',money(poultry.periodEggRevenue),money(poultry.periodEggReceived),money(poultry.eggReceivable)],
+      ['Projectos',money(monthlyProjectIncome),money(monthlyProjectIncome),money(0)],
+      ['Quotas',money(monthlyDues),money(monthlyDues),money(0)],
+      ['Total',money(consolidatedIncome),money(receivedThisMonth),money(consolidatedReceivable)],
+    ])}</div>
+    <div class="split">
+      <div class="card"><h3>Despesas do mês</h3>${simpleTable(['Origem','Valor'],[
+        ['Institucional',money(s.month_expenses)],['Avicultura',money(poultry.periodPurchases)],['Total',money(consolidatedExpenses)],
+      ])}</div>
+      <div class="card"><h3>Saldos e controlo financeiro</h3>${simpleTable(['Indicador','Valor'],[
+        ['Saldo institucional',money(s.total_balance)],['Saldo da avicultura',money(poultry.availableBalance)],
+        ['Quotas acumuladas',money(management.partner_dues_income)],['Ganhos de projectos',money(management.project_income)],
+        ['Orçamento disponível',money(s.available_budget)],['Adiantamentos pendentes',money(s.pending_advances)],
+      ])}</div>
+    </div>
     <div class="card"><h3>Caixa e contas bancárias</h3><form id="finance-account-form" class="form-grid">
       <input name="account_name" placeholder="Nome da conta ou caixa" required><select name="account_type"><option value="cash">Caixa</option><option value="bank">Conta bancária</option><option value="mobile_money">Carteira móvel</option><option value="other">Outra</option></select>
       <input name="institution_name" placeholder="Banco/instituição"><input name="account_reference" placeholder="Número ou referência">
@@ -315,16 +360,26 @@ async function renderPoultry() {
   }
 
   const eggs=poultry.eggs,birds=poultry.birds;
-  content.innerHTML=`<div class="dashboard-grid">
-    ${stat('Frangos vivos',birds.total_birds_alive||0)}${stat('Mortes de frangos',birds.total_birds_dead||0)}
-    ${stat('Poedeiras vivas',eggs.layers_alive||0)}${stat('Ovos produzidos',eggs.eggs_produced||0)}
-    ${stat('Ovos vendidos',eggs.eggs_sold||0)}${stat('Stock de ovos',eggs.eggs_in_stock||0)}
-    ${stat('Receita de frangos',money(poultry.chickenRevenue))}${stat('Receita de ovos',money(poultry.eggRevenue))}
-    ${stat('Receita total da avicultura',money(poultry.chickenRevenue+poultry.eggRevenue))}
-    ${stat('Frangos por receber',money(poultry.chickenReceivable))}${stat('Ovos por receber',money(poultry.eggReceivable))}
-    ${stat('Despesas do mês',money(poultry.periodPurchases))}${stat('Saldo disponível',money(poultry.availableBalance))}
-  </div>
-  <div class="card mt-16"><h3>Gestão operacional</h3><p>Os registos detalhados de compras, frangos, mortalidade, produção e vendas de ovos permanecem no <a href="./index.html"><strong>JENI Frangos</strong></a>.</p></div>`;
+  const totalRevenue=poultry.chickenRevenue+poultry.eggRevenue;
+  const totalReceivable=poultry.chickenReceivable+poultry.eggReceivable;
+  const chickenReceived=Math.max(poultry.chickenRevenue-poultry.chickenReceivable,0);
+  const eggsReceived=Math.max(poultry.eggRevenue-poultry.eggReceivable,0);
+  content.innerHTML=`<div class="grid gap-14">
+    <section class="card"><h3>Produção e stock</h3><div class="dashboard-grid">
+      ${stat('Frangos vivos',birds.total_birds_alive||0)}${stat('Mortes de frangos',birds.total_birds_dead||0)}
+      ${stat('Poedeiras vivas',eggs.layers_alive||0)}${stat('Ovos produzidos',eggs.eggs_produced||0)}
+      ${stat('Ovos vendidos',eggs.eggs_sold||0)}${stat('Stock de ovos',eggs.eggs_in_stock||0)}
+    </div></section>
+    <section class="card"><h3>Resumo financeiro</h3><div class="dashboard-grid">
+      ${stat('Saldo disponível',money(poultry.availableBalance))}${stat('Receita total da avicultura',money(totalRevenue))}
+      ${stat('Total por receber',money(totalReceivable))}${stat('Despesas do mês',money(poultry.periodPurchases))}
+    </div>${simpleTable(['Actividade','Receita registada','Recebido','Por receber'],[
+      ['Frangos',money(poultry.chickenRevenue),money(chickenReceived),money(poultry.chickenReceivable)],
+      ['Ovos',money(poultry.eggRevenue),money(eggsReceived),money(poultry.eggReceivable)],
+      ['Total',money(totalRevenue),money(chickenReceived+eggsReceived),money(totalReceivable)],
+    ])}</section>
+    <div class="card"><h3>Gestão operacional</h3><p>Os registos detalhados de compras, frangos, mortalidade, produção e vendas de ovos permanecem no <a href="./index.html"><strong>JENI Frangos</strong></a>.</p></div>
+  </div>`;
 }
 
 async function renderArtists() {
