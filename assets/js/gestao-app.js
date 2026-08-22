@@ -130,16 +130,23 @@ async function renderDepartment(key) {
 }
 
 async function renderDirection() {
-  const [{data:s,error},{data:partners},{data:dues}] = await Promise.all([
+  const [{data:s,error},{data:partners},{data:dues},{data:finance,error:financeError},poultry] = await Promise.all([
     supabase.from('management_dashboard').select('*').single(),
     supabase.from('partners').select('*').order('full_name'),
     supabase.from('partner_dues').select('*').order('payment_date',{ascending:false}).limit(12),
+    supabase.from('finance_summary').select('*').single(),
+    getPoultrySnapshot(),
   ]);
-  if(error) return showError(error);
+  if(error||financeError) return showError(error||financeError);
+  const systemBalance=Number(finance.total_balance||0)+poultry.availableBalance
+    +Number(s.partner_dues_income||0)+Number(s.project_income||0);
+  const systemReceivable=Number(finance.total_receivable||0)+poultry.chickenReceivable+poultry.eggReceivable;
   content.innerHTML=`<div class="grid gap-14">
     <div class="dashboard-grid">
+      ${stat('Saldo geral do sistema',money(systemBalance))}${stat('Total por receber',money(systemReceivable))}
       ${stat('Receitas institucionais',money(s.institutional_income))}${stat('Despesas institucionais',money(s.institutional_expenses))}
-      ${stat('Saldo institucional',money(s.institutional_balance))}${stat('Receita da avicultura',money(Number(s.chicken_revenue)+Number(s.egg_revenue)))}
+      ${stat('Saldo institucional',money(finance.total_balance))}${stat('Saldo disponível da avicultura',money(poultry.availableBalance))}
+      ${stat('Receita da avicultura',money(Number(s.chicken_revenue)+Number(s.egg_revenue)))}
       ${stat('Receita de frangos',money(s.chicken_revenue))}${stat('Receita de ovos',money(s.egg_revenue))}
       ${stat('Ganhos de projectos',money(s.project_income))}${stat('Quotas recebidas',money(s.partner_dues_income))}
       ${stat('Candidaturas activas',s.active_applications)}${stat('Tarefas pendentes',`${s.pending_tasks} (${s.overdue_tasks} atrasadas)`)}
@@ -191,20 +198,27 @@ async function renderRecords(department) {
 
 
 async function renderFinance() {
-  const [{data:s,error},{data:accounts},{data:projects},{data:transactions},{data:obligations},{data:budgets},{data:transfers},{data:advances},poultry] = await Promise.all([
+  const [{data:s,error},{data:accounts},{data:projects},{data:transactions},{data:obligations},{data:budgets},{data:transfers},{data:advances},poultry,{data:management,error:managementError},{data:dues,error:duesError}] = await Promise.all([
     supabase.from('finance_summary').select('*').single(),
     supabase.from('finance_account_balances').select('*').order('account_name'),
-    supabase.from('company_projects').select('id,project_name').order('project_name'),
+    supabase.from('company_projects').select('id,project_name,received_date,income_amount').order('project_name'),
     supabase.from('institutional_transactions').select('*').order('transaction_date',{ascending:false}).limit(50),
     supabase.from('finance_obligations').select('*').order('due_date').limit(50),
     supabase.from('finance_budget_execution').select('*').order('period_start',{ascending:false}).limit(30),
     supabase.from('finance_transfers_display').select('*').order('transfer_date',{ascending:false}).limit(30),
     supabase.from('finance_advances').select('*').order('request_date',{ascending:false}).limit(30),
     getPoultrySnapshot(),
+    supabase.from('management_dashboard').select('*').single(),
+    supabase.from('partner_dues').select('payment_date,amount'),
   ]);
-  if(error)return showError(error);
-  const consolidatedBalance=Number(s.total_balance||0)+poultry.availableBalance;
-  const consolidatedIncome=Number(s.month_income||0)+poultry.periodChickenRevenue+poultry.periodEggRevenue;
+  if(error||managementError||duesError)return showError(error||managementError||duesError);
+  const inMonth=(date)=>date>=poultry.range.start&&date<=poultry.range.end;
+  const monthlyDues=sumRows((dues||[]).filter(due=>inMonth(due.payment_date)),'amount');
+  const monthlyProjectIncome=sumRows((projects||[]).filter(project=>inMonth(project.received_date)),'income_amount');
+  const consolidatedBalance=Number(s.total_balance||0)+poultry.availableBalance
+    +Number(management.partner_dues_income||0)+Number(management.project_income||0);
+  const consolidatedIncome=Number(s.month_income||0)+poultry.periodChickenRevenue+poultry.periodEggRevenue
+    +monthlyDues+monthlyProjectIncome;
   const consolidatedExpenses=Number(s.month_expenses||0)+poultry.periodPurchases;
   const consolidatedReceivable=Number(s.total_receivable||0)+poultry.chickenReceivable+poultry.eggReceivable;
   const accountOpts=(accounts||[]).filter(a=>a.is_active).map(a=>`<option value="${a.id}">${a.account_name} — ${money(a.current_balance)}</option>`).join('');
@@ -214,7 +228,8 @@ async function renderFinance() {
   content.innerHTML=`<div class="grid gap-14">
     <div class="dashboard-grid">${stat('Saldo geral',money(consolidatedBalance))}${stat('Receitas do mês',money(consolidatedIncome))}
       ${stat('Receitas institucionais',money(s.month_income))}${stat('Receita de frangos do mês',money(poultry.periodChickenRevenue))}
-      ${stat('Receita de ovos do mês',money(poultry.periodEggRevenue))}${stat('Despesas do mês',money(consolidatedExpenses))}
+      ${stat('Receita de ovos do mês',money(poultry.periodEggRevenue))}${stat('Quotas recebidas do mês',money(monthlyDues))}
+      ${stat('Ganhos de projectos do mês',money(monthlyProjectIncome))}${stat('Despesas do mês',money(consolidatedExpenses))}
       ${stat('Despesas da avicultura',money(poultry.periodPurchases))}${stat('Resultado do mês',money(consolidatedIncome-consolidatedExpenses))}
       ${stat('Saldo da avicultura',money(poultry.availableBalance))}${stat('A receber',money(consolidatedReceivable))}
       ${stat('Frangos por receber',money(poultry.chickenReceivable))}${stat('Ovos por receber',money(poultry.eggReceivable))}
@@ -652,7 +667,7 @@ function reportDates(period,start,end){
 }
 async function renderGeneralReport(filters={period:'monthly'}) {
   const range=reportDates(filters.period,filters.start,filters.end);
-  const [{data:finance},{data:projects},{data:marketing},{data:artists},{data:poultry},{data:eggs},{data:tasks},{data:hr},{data:transactions},{data:projectRows},{data:campaigns},{data:activities},poultrySnapshot] = await Promise.all([
+  const [{data:finance},{data:projects},{data:marketing},{data:artists},{data:poultry},{data:eggs},{data:tasks},{data:hr},{data:transactions},{data:projectRows},{data:campaigns},{data:activities},poultrySnapshot,{data:management},{data:dues},{data:companyProjects}] = await Promise.all([
     supabase.from('finance_summary').select('*').single(),supabase.from('projects_summary').select('*').single(),
     supabase.from('marketing_summary').select('*').single(),supabase.from('artist_agency_summary').select('*').single(),
     supabase.from('dashboard_summary').select('*').single(),supabase.from('egg_business_summary').select('*').single(),
@@ -662,13 +677,20 @@ async function renderGeneralReport(filters={period:'monthly'}) {
     supabase.from('marketing_campaigns').select('*').order('start_date',{ascending:false}),
     supabase.from('artist_activities').select('*,artists(artistic_name)').gte('activity_date',range.start).lte('activity_date',range.end).order('activity_date',{ascending:false}),
     getPoultrySnapshot(range),
+    supabase.from('management_dashboard').select('*').single(),
+    supabase.from('partner_dues').select('payment_date,amount').gte('payment_date',range.start).lte('payment_date',range.end),
+    supabase.from('company_projects').select('received_date,income_amount').gte('received_date',range.start).lte('received_date',range.end),
   ]);
   const tx=transactions||[];
   const institutionalIncome=tx.filter(t=>t.direction==='income'&&(t.approval_status||'approved')==='approved').reduce((n,t)=>n+Number(t.amount||0),0);
   const institutionalExpenses=tx.filter(t=>t.direction==='expense'&&(t.approval_status||'approved')==='approved').reduce((n,t)=>n+Number(t.amount||0),0);
-  const periodIncome=institutionalIncome+poultrySnapshot.periodChickenRevenue+poultrySnapshot.periodEggRevenue;
+  const periodDues=sumRows(dues,'amount');
+  const periodProjectIncome=sumRows(companyProjects,'income_amount');
+  const periodIncome=institutionalIncome+poultrySnapshot.periodChickenRevenue+poultrySnapshot.periodEggRevenue
+    +periodDues+periodProjectIncome;
   const periodExpenses=institutionalExpenses+poultrySnapshot.periodPurchases;
-  const consolidatedReportBalance=Number(finance?.total_balance||0)+poultrySnapshot.availableBalance;
+  const consolidatedReportBalance=Number(finance?.total_balance||0)+poultrySnapshot.availableBalance
+    +Number(management?.partner_dues_income||0)+Number(management?.project_income||0);
   const consolidatedReportReceivables=Number(finance?.total_receivable||0)+poultrySnapshot.chickenReceivable+poultrySnapshot.eggReceivable;
   const dateIn=(v)=>v&&v>=range.start&&v<=range.end;
   const pRows=(projectRows||[]).filter(p=>dateIn(p.start_date)||dateIn(p.due_date)||dateIn((p.created_at||'').slice(0,10)));
@@ -686,6 +708,7 @@ async function renderGeneralReport(filters={period:'monthly'}) {
       <section class="report-section"><h3>1. Resumo executivo</h3><div class="dashboard-grid">
         ${stat('Receitas no período',money(periodIncome))}${stat('Despesas no período',money(periodExpenses))}${stat('Resultado no período',money(periodIncome-periodExpenses))}
         ${stat('Receita de frangos no período',money(poultrySnapshot.periodChickenRevenue))}${stat('Receita de ovos no período',money(poultrySnapshot.periodEggRevenue))}
+        ${stat('Quotas recebidas no período',money(periodDues))}${stat('Ganhos de projectos no período',money(periodProjectIncome))}
         ${stat('Projectos activos',projects?.active_projects||0)}${stat('Campanhas activas',marketing?.active_campaigns||0)}${stat('Artistas activos',artists?.active_artists||0)}
       </div></section>
       <section class="report-section"><h3>2. Financeiro</h3><div class="dashboard-grid">
