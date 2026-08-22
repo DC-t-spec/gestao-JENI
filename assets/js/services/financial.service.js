@@ -112,6 +112,54 @@ export async function getActiveFinancialAccounts() {
   return data || [];
 }
 
+export async function reconcileEggSaleTransactions(accounts = null) {
+  const activeAccounts = accounts || await getActiveFinancialAccounts();
+  const [{ data: eggSales, error: eggSalesError }, { data: existingTransactions, error: transactionsError }] = await Promise.all([
+    supabase
+      .from('egg_sales')
+      .select('id, sale_date, customer_name, total_amount, payment_method, notes')
+      .gt('total_amount', 0),
+    supabase
+      .from('financial_transactions')
+      .select('reference_id')
+      .eq('reference_type', 'egg_sale'),
+  ]);
+
+  if (eggSalesError) throw eggSalesError;
+  if (transactionsError) throw transactionsError;
+
+  const recordedSaleIds = new Set((existingTransactions || []).map((transaction) => String(transaction.reference_id)));
+  const skippedSales = [];
+  let reconciledCount = 0;
+
+  for (const sale of eggSales || []) {
+    if (recordedSaleIds.has(String(sale.id))) continue;
+
+    const account = findAccountByPaymentMethod(activeAccounts, sale.payment_method);
+    if (!account) {
+      skippedSales.push(sale.id);
+      continue;
+    }
+
+    await createFinancialTransaction({
+      account_id: account.id,
+      transaction_date: sale.sale_date,
+      direction: 'in',
+      transaction_type: 'sale_payment',
+      amount: sale.total_amount,
+      reference_type: 'egg_sale',
+      reference_id: sale.id,
+      description: `Recebimento de venda de ovos - ${sale.customer_name}`,
+      notes: sale.notes || null,
+    });
+
+    recordedSaleIds.add(String(sale.id));
+    reconciledCount += 1;
+  }
+
+  return { reconciledCount, skippedSales };
+}
+
 export function buildFinancialAccountOptions(accounts, { placeholder = 'Selecionar conta' } = {}) {
   const emptyOption = `<option value="">${placeholder}</option>`;
   const options = (accounts || [])

@@ -9,6 +9,7 @@ import {
   getFinancialAccountBalances,
   getActiveFinancialAccounts,
   getReceivablesSummary,
+  reconcileEggSaleTransactions,
 } from '../services/financial.service.js';
 
 function normalizeAccountBalancesByType(accounts) {
@@ -113,7 +114,6 @@ export async function renderDashboard() {
     { data: eggSummary },
     { data: chickenMonthSales },
     { data: eggMonthSales },
-    financialBalances,
     receivables,
     activeAccounts,
   ] = await Promise.all([
@@ -135,7 +135,6 @@ export async function renderDashboard() {
       .select('total_amount')
       .gte('sale_date', monthStart)
       .lt('sale_date', nextMonthStart),
-    getFinancialAccountBalances().catch(() => []),
     getReceivablesSummary().catch(() => null),
     getActiveFinancialAccounts().catch(() => []),
   ]);
@@ -150,6 +149,24 @@ export async function renderDashboard() {
     return;
   }
 
+  try {
+    const { skippedSales } = await reconcileEggSaleTransactions(activeAccounts);
+    if (skippedSales.length) {
+      console.warn('Vendas de ovos sem conta financeira activa:', skippedSales);
+    }
+  } catch (reconciliationError) {
+    console.error('Erro ao regularizar movimentos financeiros das vendas de ovos:', reconciliationError);
+  }
+
+  const [financialBalances, { data: monthTransactions, error: monthTransactionsError }] = await Promise.all([
+    getFinancialAccountBalances().catch(() => []),
+    supabase
+      .from('financial_transactions')
+      .select('direction, amount')
+      .gte('transaction_date', monthStart)
+      .lt('transaction_date', nextMonthStart),
+  ]);
+
   const accountOptions = (activeAccounts || []).map((account) => `<option value="${account.id}">${account.name}</option>`).join('');
 
   const balanceByType = normalizeAccountBalancesByType(financialBalances);
@@ -161,6 +178,14 @@ export async function renderDashboard() {
   const chickenMonthRevenue = sumAmounts(chickenMonthSales);
   const eggMonthRevenue = sumAmounts(eggMonthSales);
   const totalMonthRevenue = chickenMonthRevenue + eggMonthRevenue;
+  const monthPurchases = Number(data.month_purchases || 0);
+  const realMonthCashBalance = monthTransactionsError
+    ? Number(data.real_month_cash_balance || 0) + eggMonthRevenue
+    : (monthTransactions || []).reduce((balance, transaction) => {
+      const amount = Number(transaction?.amount || 0);
+      return balance + (transaction?.direction === 'out' ? -amount : amount);
+    }, 0);
+  const monthBalance = totalMonthRevenue - monthPurchases;
 
   dom.pageContent.innerHTML = `
     <div class="grid gap-14">
@@ -215,9 +240,9 @@ export async function renderDashboard() {
           <div class="card stat"><h4>Vendas totais do mês</h4><strong>${formatMoney(totalMonthRevenue)}</strong></div>
           <div class="card stat"><h4>Vendas de frangos</h4><strong>${formatMoney(chickenMonthRevenue)}</strong></div>
           <div class="card stat"><h4>Vendas de ovos</h4><strong>${formatMoney(eggMonthRevenue)}</strong></div>
-          <div class="card stat"><h4>Compras do mês</h4><strong>${formatMoney(data.month_purchases)}</strong></div>
-          <div class="card stat"><h4>Caixa real do mês</h4><strong>${formatMoney(data.real_month_cash_balance)}</strong></div>
-          <div class="card stat"><h4>Saldo do mês</h4><strong>${formatMoney(data.month_balance)}</strong></div>
+          <div class="card stat"><h4>Compras do mês</h4><strong>${formatMoney(monthPurchases)}</strong></div>
+          <div class="card stat"><h4>Caixa real do mês</h4><strong>${formatMoney(realMonthCashBalance)}</strong></div>
+          <div class="card stat"><h4>Saldo do mês</h4><strong>${formatMoney(monthBalance)}</strong></div>
         </div>
       </div>
 
