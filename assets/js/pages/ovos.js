@@ -2,6 +2,11 @@ import { supabase } from '../core/supabase-client.js';
 import { formatMoney, formatNumber, getCurrentUserId } from '../core/utils.js';
 import { setPageHeader, showFeedback } from '../ui/ui.js';
 import { dom } from '../ui/dom.js';
+import {
+  createFinancialTransaction,
+  findAccountByPaymentMethod,
+  getActiveFinancialAccounts,
+} from '../services/financial.service.js';
 
 const today = () => new Date().toISOString().slice(0, 10);
 
@@ -65,13 +70,51 @@ export async function renderEggs() {
     const eggQuantity = fd.get('sale_unit') === 'tray' ? quantity * 30 : quantity;
     const feedback = document.querySelector('#egg-sale-feedback');
     if (eggQuantity > Number(summary.eggs_in_stock)) return showFeedback(feedback, 'Quantidade superior ao stock disponível.', 'error');
-    const { error: saleError } = await supabase.from('egg_sales').insert({
+
+    const totalAmount = Number((quantity * Number(fd.get('unit_price'))).toFixed(2));
+    const paymentMethod = fd.get('payment_method');
+    let financialAccount = null;
+
+    if (totalAmount > 0) {
+      try {
+        const accounts = await getActiveFinancialAccounts();
+        financialAccount = findAccountByPaymentMethod(accounts, paymentMethod);
+      } catch (accountError) {
+        return showFeedback(feedback, accountError.message, 'error');
+      }
+
+      if (!financialAccount) {
+        return showFeedback(feedback, 'Não existe conta financeira activa para o método de pagamento seleccionado.', 'error');
+      }
+    }
+
+    const { data: insertedSale, error: saleError } = await supabase.from('egg_sales').insert({
       sale_date: fd.get('sale_date'), customer_name: fd.get('customer_name'), sale_unit: fd.get('sale_unit'),
       quantity, egg_quantity: eggQuantity, unit_price: Number(fd.get('unit_price')),
-      total_amount: quantity * Number(fd.get('unit_price')), payment_method: fd.get('payment_method'),
+      total_amount: totalAmount, payment_method: paymentMethod,
       notes: fd.get('notes') || null, created_by: getCurrentUserId(),
-    });
+    }).select('id').single();
     if (saleError) return showFeedback(feedback, saleError.message, 'error');
+
+    if (financialAccount) {
+      try {
+        await createFinancialTransaction({
+          account_id: financialAccount.id,
+          transaction_date: fd.get('sale_date'),
+          direction: 'in',
+          transaction_type: 'sale_payment',
+          amount: totalAmount,
+          reference_type: 'egg_sale',
+          reference_id: insertedSale.id,
+          description: `Recebimento de venda de ovos - ${fd.get('customer_name')}`,
+          notes: fd.get('notes') || null,
+        });
+      } catch (transactionError) {
+        console.error('Erro ao criar movimento financeiro da venda de ovos:', transactionError);
+        return showFeedback(feedback, `A venda foi guardada, mas o movimento financeiro não foi registado: ${transactionError.message}`, 'error');
+      }
+    }
+
     await renderEggs();
   });
 }
