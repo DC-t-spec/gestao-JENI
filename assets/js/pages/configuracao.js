@@ -23,19 +23,28 @@ export async function renderSettings() {
     { data: audit, error: auditError },
     batches,
     { data: chickenSales, error: chickenSalesError },
+    { data: chickenPayments, error: chickenPaymentsError },
+    { data: chickenFinancialMovements, error: chickenFinancialMovementsError },
   ] = await Promise.all([
     supabase.from('profiles').select('*').order('created_at', { ascending: false }),
     supabase.from('audit_logs').select('*').order('created_at', { ascending: false }).limit(25),
     fetchBatches(),
     supabase.from('sales').select('id, total_amount'),
+    supabase.from('sale_payments').select('id'),
+    supabase.from('financial_transactions').select('id, reference_type').in('reference_type', ['sale', 'sale_payment']),
   ]);
 
   if (profilesError) console.error('profilesError:', profilesError);
   if (auditError) console.error('auditError:', auditError);
   if (chickenSalesError) console.error('chickenSalesError:', chickenSalesError);
+  if (chickenPaymentsError) console.error('chickenPaymentsError:', chickenPaymentsError);
+  if (chickenFinancialMovementsError) console.error('chickenFinancialMovementsError:', chickenFinancialMovementsError);
 
   const chickenSalesCount = (chickenSales || []).length;
   const chickenSalesAmount = (chickenSales || []).reduce((total, sale) => total + Number(sale.total_amount || 0), 0);
+  const chickenPaymentsCount = (chickenPayments || []).length;
+  const chickenFinancialMovementsCount = (chickenFinancialMovements || []).length;
+  const hasChickenSaleRecords = chickenSalesCount + chickenPaymentsCount + chickenFinancialMovementsCount > 0;
 
   console.log('audit:', audit);
   console.log('batches:', batches);
@@ -141,9 +150,11 @@ export async function renderSettings() {
         <p class="muted">Remove exclusivamente as vendas de frangos, os respectivos pagamentos e os movimentos financeiros associados. Não altera ovos, poedeiras, entradas de frangos ou compras.</p>
         <div class="toolbar">
           <span class="badge">Vendas registadas: <strong style="margin-left:6px;">${chickenSalesCount}</strong></span>
+          <span class="badge">Pagamentos: <strong style="margin-left:6px;">${chickenPaymentsCount}</strong></span>
+          <span class="badge">Movimentos financeiros: <strong style="margin-left:6px;">${chickenFinancialMovementsCount}</strong></span>
           <span class="badge">Valor registado: <strong style="margin-left:6px;">${formatMoney(chickenSalesAmount)}</strong></span>
         </div>
-        <button id="clear-chicken-sales" type="button" class="btn btn-secondary" ${chickenSalesCount ? '' : 'disabled'}>Eliminar vendas de frangos</button>
+        <button id="clear-chicken-sales" type="button" class="btn btn-secondary" ${hasChickenSaleRecords ? '' : 'disabled'}>Eliminar tudo das vendas de frangos</button>
         <div id="clear-chicken-sales-feedback"></div>
       </div>
 
@@ -225,8 +236,8 @@ export async function renderSettings() {
     }
 
     try {
-      const removedCount = await clearChickenSales(chickenSales || []);
-      showFeedback(feedback, `${removedCount} venda(s) de frangos e respectivos movimentos foram eliminados.`, 'success');
+      const removed = await clearChickenSales();
+      showFeedback(feedback, `Limpeza concluída e verificada: ${removed.sales} venda(s), ${removed.payments} pagamento(s) e ${removed.transactions} movimento(s) financeiro(s) eliminados.`, 'success');
       await renderSettings();
     } catch (cleanupError) {
       console.error('Erro ao eliminar vendas de frangos:', cleanupError);
@@ -235,46 +246,59 @@ export async function renderSettings() {
   });
 }
 
-async function clearChickenSales(sales) {
-  const saleIds = (sales || []).map((sale) => sale.id).filter(Boolean);
-  if (!saleIds.length) return 0;
+async function clearChickenSales() {
+  const [salesResult, paymentsResult, transactionsResult] = await Promise.all([
+    supabase.from('sales').select('id'),
+    supabase.from('sale_payments').select('id'),
+    supabase.from('financial_transactions').select('id').in('reference_type', ['sale', 'sale_payment']),
+  ]);
 
-  const { data: salePayments, error: paymentsLookupError } = await supabase
-    .from('sale_payments')
-    .select('id')
-    .in('sale_id', saleIds);
-  if (paymentsLookupError) throw paymentsLookupError;
+  if (salesResult.error) throw salesResult.error;
+  if (paymentsResult.error) throw paymentsResult.error;
+  if (transactionsResult.error) throw transactionsResult.error;
 
-  const paymentIds = (salePayments || []).map((payment) => payment.id).filter(Boolean);
-  if (paymentIds.length) {
-    const { error: paymentTransactionsError } = await supabase
+  const saleIds = (salesResult.data || []).map((sale) => sale.id).filter(Boolean);
+  const paymentIds = (paymentsResult.data || []).map((payment) => payment.id).filter(Boolean);
+  const transactionIds = (transactionsResult.data || []).map((transaction) => transaction.id).filter(Boolean);
+
+  if (transactionIds.length) {
+    const { error: transactionsError } = await supabase
       .from('financial_transactions')
       .delete()
-      .eq('reference_type', 'sale_payment')
-      .in('reference_id', paymentIds);
-    if (paymentTransactionsError) throw paymentTransactionsError;
+      .in('id', transactionIds);
+    if (transactionsError) throw transactionsError;
   }
-
-  const { error: saleTransactionsError } = await supabase
-    .from('financial_transactions')
-    .delete()
-    .eq('reference_type', 'sale')
-    .in('reference_id', saleIds);
-  if (saleTransactionsError) throw saleTransactionsError;
 
   if (paymentIds.length) {
-    const { error: salePaymentsError } = await supabase
+    const { error: paymentsError } = await supabase
       .from('sale_payments')
       .delete()
-      .in('sale_id', saleIds);
-    if (salePaymentsError) throw salePaymentsError;
+      .in('id', paymentIds);
+    if (paymentsError) throw paymentsError;
   }
 
-  const { error: salesError } = await supabase
-    .from('sales')
-    .delete()
-    .in('id', saleIds);
-  if (salesError) throw salesError;
+  if (saleIds.length) {
+    const { error: salesError } = await supabase
+      .from('sales')
+      .delete()
+      .in('id', saleIds);
+    if (salesError) throw salesError;
+  }
 
-  return saleIds.length;
+  const [remainingSales, remainingPayments, remainingTransactions] = await Promise.all([
+    supabase.from('sales').select('id'),
+    supabase.from('sale_payments').select('id'),
+    supabase.from('financial_transactions').select('id').in('reference_type', ['sale', 'sale_payment']),
+  ]);
+
+  if (remainingSales.error) throw remainingSales.error;
+  if (remainingPayments.error) throw remainingPayments.error;
+  if (remainingTransactions.error) throw remainingTransactions.error;
+
+  const remainingCount = (remainingSales.data || []).length + (remainingPayments.data || []).length + (remainingTransactions.data || []).length;
+  if (remainingCount > 0) {
+    throw new Error(`A limpeza não ficou completa. Ainda existem ${(remainingSales.data || []).length} venda(s), ${(remainingPayments.data || []).length} pagamento(s) e ${(remainingTransactions.data || []).length} movimento(s) financeiro(s).`);
+  }
+
+  return { sales: saleIds.length, payments: paymentIds.length, transactions: transactionIds.length };
 }
