@@ -8,11 +8,12 @@ import { renderMortality } from './pages/mortalidade.js';
 import { renderReports } from './pages/relatorios.js';
 import { renderSettings } from './pages/configuracao.js';
 import { renderEggs } from './pages/ovos.js';
+import { renderDebts } from './pages/dividas.js';
 import { renderGeneralManagement } from './pages/gestao-geral.js';
 
 const routes = {
   dashboard: renderDashboard, compras: renderPurchases, entradas: renderBirdEntries,
-  vendas: renderSales, mortalidade: renderMortality, ovos: renderEggs,
+  vendas: renderSales, mortalidade: renderMortality, ovos: renderEggs, dividas: renderDebts,
   relatorios: renderReports, configuracao: renderSettings, 'gestao-geral': renderGeneralManagement,
 };
 
@@ -23,7 +24,7 @@ export function navTo(route) {
 }
 
 export async function renderRoute(route) {
-  if (['configuracao', 'gestao-geral'].includes(route) && !canAccessAdmin()) route = 'dashboard';
+  if (['configuracao', 'gestao-geral', 'dividas'].includes(route) && !canAccessAdmin()) route = 'dashboard';
   await (routes[route] || routes.dashboard)();
   document.querySelectorAll('.nav-link').forEach(link => link.classList.toggle('active', link.dataset.route === route));
 }

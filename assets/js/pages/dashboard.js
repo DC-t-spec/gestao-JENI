@@ -40,6 +40,21 @@ function sumAmounts(rows, field = 'total_amount') {
   return (rows || []).reduce((sum, row) => sum + Number(row?.[field] || 0), 0);
 }
 
+async function getManualPoultryDebts() {
+  try {
+    const { data, error } = await supabase
+      .from('finance_obligations')
+      .select('obligation_type, total_amount, paid_amount, status')
+      .eq('department', 'JENI FRANGOS');
+
+    if (error) throw error;
+    return data || [];
+  } catch (debtError) {
+    console.warn('Não foi possível carregar as dívidas manuais:', debtError.message);
+    return [];
+  }
+}
+
 function openFinancialModal({ title, fields, submitLabel, onSubmit }) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
@@ -116,6 +131,7 @@ export async function renderDashboard() {
     { data: chickenMonthSales },
     { data: eggMonthSales },
     { data: pendingEggSales },
+    manualDebts,
     receivables,
     activeAccounts,
   ] = await Promise.all([
@@ -144,6 +160,7 @@ export async function renderDashboard() {
       .from('egg_sales')
       .select('id, total_amount')
       .is('payment_method', null),
+    getManualPoultryDebts(),
     getReceivablesSummary().catch(() => null),
     getActiveFinancialAccounts().catch(() => []),
   ]);
@@ -190,7 +207,14 @@ export async function renderDashboard() {
   const totalMonthRevenue = chickenMonthRevenue + eggMonthRevenue;
   const pendingEggAmount = sumAmounts(pendingEggSales);
   const pendingChickenAmount = Number(receivables?.total_due || 0);
-  const totalReceivables = pendingChickenAmount + pendingEggAmount;
+  const activeManualDebts = (manualDebts || []).filter((debt) => !['paid', 'cancelled'].includes(debt.status));
+  const manualReceivables = activeManualDebts
+    .filter((debt) => debt.obligation_type === 'receivable')
+    .reduce((total, debt) => total + Math.max(Number(debt.total_amount || 0) - Number(debt.paid_amount || 0), 0), 0);
+  const manualPayables = activeManualDebts
+    .filter((debt) => debt.obligation_type === 'payable')
+    .reduce((total, debt) => total + Math.max(Number(debt.total_amount || 0) - Number(debt.paid_amount || 0), 0), 0);
+  const totalReceivables = pendingChickenAmount + pendingEggAmount + manualReceivables;
   const totalPendingSales = Number(data.total_pending_sales || 0) + (pendingEggSales || []).length;
   const monthPurchases = Number(data.month_purchases || 0);
   const realMonthCashBalance = monthTransactionsError
@@ -266,6 +290,8 @@ export async function renderDashboard() {
           <div class="card stat"><h4>Total por receber</h4><strong>${formatMoney(totalReceivables)}</strong></div>
           <div class="card stat"><h4>Frangos por receber</h4><strong>${formatMoney(pendingChickenAmount)}</strong></div>
           <div class="card stat"><h4>Ovos por receber</h4><strong>${formatMoney(pendingEggAmount)}</strong></div>
+          <div class="card stat"><h4>Outras dívidas por receber</h4><strong>${formatMoney(manualReceivables)}</strong></div>
+          <div class="card stat"><h4>Dívidas a pagar</h4><strong>${formatMoney(manualPayables)}</strong></div>
           <div class="card stat"><h4>Vendas pendentes</h4><strong>${formatNumber(totalPendingSales)}</strong></div>
         </div>
       </div>
