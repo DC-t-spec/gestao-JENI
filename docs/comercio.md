@@ -71,3 +71,21 @@ No Histórico, confirmar a origem das compras anteriores: as três entradas inic
 O saldo abrange apenas os movimentos registados nesta área. Não inclui levantamentos, outras despesas ou capital ainda não aplicado. O custo total registado numa entrada é tratado como pago pela fonte indicada; não há contas a pagar a fornecedores neste fluxo.
 
 Teste adicional: `node tests/retail-cash.test.mjs`.
+
+## Papelaria: artigos, serviços e consumíveis
+
+Aplicar uma vez `supabase/20261019_servicos_papelaria.sql` depois de todas as migrações acima. Os registos existentes são conservados como artigos. Não são criados preços nem custos fictícios.
+
+Em **Artigos e serviços**:
+
+1. Registar os artigos de revenda (cadernos, canetas, etc.), os serviços (por exemplo, Cópia A4 preto e branco e Impressão A4 a cores) e os consumíveis (papel, toner e agrafos). Cada serviço tem o seu próprio preço por página. Os consumíveis não têm preço de venda e não aparecem na venda ao cliente.
+2. Em **Registar compra**, dar entrada dos consumíveis, com quantidade, custo total e origem do dinheiro. Usar a unidade base escolhida: uma resma de 500 folhas entra como 500 folhas, não como 1 folha; um cartucho pode entrar como 1 cartucho.
+3. Em **Custo de cópias e impressões**, associar os consumíveis ao serviço. Exemplo: papel, 1 folha por página; toner, 0,001 cartucho por página quando o rendimento estimado é de 1.000 páginas/cartucho; agrafos, 1 ou 2 por trabalho, conforme o serviço prestado. As quantidades são configuradas pelo utilizador conforme os seus materiais e equipamento. Para frente e verso, configurar o consumo de papel adequado por página impressa.
+
+Na venda, seleccionar o serviço, a quantidade de páginas e o pagamento. O servidor desconta os materiais automaticamente, incluindo quantidades fraccionárias de toner, guarda o custo do trabalho e cobra apenas `páginas × preço do serviço`. Não adiciona o preço dos agrafos ao total cobrado. O custo de toner por página é uma estimativa baseada no rendimento informado; não é uma medição da máquina.
+
+Os serviços não precisam de stock fictício e não aceitam compras/perdas. Os consumíveis têm stock físico, custo médio e valorização, são consumidos no serviço e não podem ser vendidos separadamente. Se também vende caixas de agrafos ao público, registar esse artigo de revenda separadamente dos agrafos usados no serviço.
+
+Custos e quantidades consumidas ficam gravados por venda em `retail_service_consumptions`, pelo custo médio de cada material no momento do trabalho. Uma compra posterior ou alteração da composição não altera o custo de trabalhos anteriores. Falta de materiais ou de configuração impede guardar a venda inteira. O pagamento e o consumo são atómicos, sem criar receitas adicionais pelo consumo de materiais.
+
+A compra dos consumíveis entra no cálculo de caixa conforme a origem do dinheiro; o consumo entra no custo do serviço e não é descontado novamente da caixa. O lucro bruto considera os materiais consumidos; despesas gerais da papelaria que não estejam registadas nos custos não estão incluídas nesse lucro.

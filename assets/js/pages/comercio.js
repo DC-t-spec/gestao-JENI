@@ -9,7 +9,7 @@ const today = () => new Date().toISOString().slice(0,10);
 const input = (label, name, type='text', extra='') => `<div class="field"><label>${label}<input name="${name}" type="${type}" ${extra} required></label></div>`;
 
 export async function renderRetail(area, initialTab = null) {
-  setPageHeader(area === 'papelaria' ? 'Papelaria' : 'Gelinhos e Kbom', 'Produtos, stock, vendas e valores por receber');
+  setPageHeader(area === 'papelaria' ? 'Papelaria' : 'Gelinhos e Kbom', area === 'papelaria' ? 'Artigos, cópias, impressões e caixa' : 'Produtos, stock, vendas e valores por receber');
   dom.pageContent.innerHTML = '<div class="card">A carregar…</div>';
   const products = [];
   for (let offset = 0; ; offset += 500) {
@@ -21,6 +21,17 @@ export async function renderRetail(area, initialTab = null) {
     products.push(...data);
     if (data.length < 500) break;
   }
+  const serviceIds=products.filter(p=>p.kind==='service').map(p=>p.id);
+  let components=[];
+  if(serviceIds.length) {
+    for(let offset=0;;offset+=500) {
+      const result=await supabase.from('retail_service_components').select('*').in('service_id',serviceIds).order('service_id').order('supply_id').range(offset,offset+499);
+      if(result.error) {dom.pageContent.innerHTML=`<div class="feedback error">${escape(result.error.message)}</div>`;return;}
+      components.push(...result.data);if(result.data.length<500) break;
+    }
+  }
+  const stockOf=p=>Number(p.stock_quantity ?? p.stock ?? 0);
+  const stockLabel=p=>stockOf(p).toLocaleString('pt-PT',{maximumFractionDigits:6});
   const ids = products.map(p=>p.id);
   let movements = [];
   // Paginação: os totais não podem ficar limitados à primeira página do Supabase.
@@ -41,7 +52,7 @@ export async function renderRetail(area, initialTab = null) {
   const unknownCosts = movements.some(m => m.total_cost == null) || products.some(p => Number(p.stock)>0 && p.average_cost == null);
   const stockValue = products.reduce((n,p) => n + Number(p.stock_value || 0), 0);
   const moneyOrUnknown = value => value == null ? 'Não informado' : formatMoney(value);
-  const options=products.map(p=>`<option value="${p.id}">${escape(p.name)} (stock: ${p.stock})</option>`).join('');
+  const options=products.map(p=>`<option value="${p.id}">${escape(p.name)}${p.kind==='service'?' (serviço)':` (stock: ${stockLabel(p)})`}</option>`).join('');
   const names=new Map(products.map(p=>[p.id,p.name]));
   dom.pageContent.innerHTML=`<div class="grid gap-14">
     <section class="retail-summary" aria-labelledby="retail-cash-heading">
@@ -69,12 +80,13 @@ export async function renderRetail(area, initialTab = null) {
     <div class="toolbar" role="group" aria-label="O que deseja fazer?">
       <button type="button" class="btn btn-secondary" data-retail-tab="sale">Vender</button>
       <button type="button" class="btn btn-secondary" data-retail-tab="entry">${stationery ? 'Registar compra' : 'Adicionar stock'}</button>
-      <button type="button" class="btn btn-secondary" data-retail-tab="products">Produtos e stock</button>
+      <button type="button" class="btn btn-secondary" data-retail-tab="products">${stationery ? 'Artigos e serviços' : 'Produtos e stock'}</button>
       <button type="button" class="btn btn-secondary" data-retail-tab="payments">Receber dívida</button>
       <button type="button" class="btn btn-secondary" data-retail-tab="history">Histórico e perdas</button>
     </div>
-    <div id="retail-products-panel" class="split" hidden><div class="card"><h3>Novo produto</h3><form id="retail-product" class="form-grid">${input(stationery ? 'Nome do artigo' : 'Produto / marca / sabor','name','text','maxlength="120"')}${input('Preço de venda (MZN)','unit_price','number','min="0" step="0.01"')}<button class="btn btn-primary">Guardar produto</button></form></div>
-    <div class="card"><h3>Stock actual</h3><div class="table-wrap"><table><thead><tr><th>Produto</th><th>Stock</th><th>Preço</th><th>Custo médio unitário</th><th>Valor ao custo</th></tr></thead><tbody>${products.map(p=>`<tr><td>${escape(p.name)}</td><td>${p.stock}</td><td>${formatMoney(p.unit_price)}</td><td>${moneyOrUnknown(p.average_cost)}</td><td>${moneyOrUnknown(p.stock_value)}</td></tr>`).join('')||'<tr><td colspan="5">Registe o primeiro produto.</td></tr>'}</tbody></table></div></div></div>
+    <div id="retail-products-panel" class="split" hidden><div class="card"><h3>Novo produto</h3><form id="retail-product" class="form-grid">${stationery ? '<div class="field"><label>Tipo<select name="product_kind"><option value="product">Artigo para venda</option><option value="service">Serviço de cópia / impressão</option><option value="supply">Consumível: papel, toner, agrafos…</option></select></label></div>' : ''}${input(stationery ? 'Nome do artigo ou serviço' : 'Produto / marca / sabor' ,'name','text','maxlength="120"')}${input('Preço de venda por unidade / página (MZN)','unit_price','number','min="0" step="0.01"')}${stationery ? input('Unidade de contagem (ex.: folha, página, agrafo, cartucho)','unit_label','text','value="unidade" maxlength="40"') : ''}<button class="btn btn-primary">Guardar produto</button></form></div>
+    <div class="card"><h3>Stock actual</h3><div class="table-wrap"><table><thead><tr><th>Produto</th><th>Tipo</th><th>Stock</th><th>Preço</th><th>Custo médio unitário</th><th>Valor ao custo</th></tr></thead><tbody>${products.map(p=>`<tr><td>${escape(p.name)}</td><td>${p.kind==='service'?'Serviço':p.kind==='supply'?'Consumível':'Artigo'}</td><td>${p.kind==='service'?'—':`${stockLabel(p)} ${escape(p.unit_label||'un.')}`}</td><td>${p.kind==='supply'?'—':formatMoney(p.unit_price)}</td><td>${p.kind==='service'?'Calculado por trabalho':moneyOrUnknown(p.average_cost)}</td><td>${p.kind==='service'?'—':moneyOrUnknown(p.stock_value)}</td></tr>`).join('')||'<tr><td colspan="6">Registe o primeiro produto.</td></tr>'}</tbody></table></div></div></div>
+    ${stationery ? `<div class="card" id="retail-service-panel" hidden><h3>Custo de cópias e impressões</h3><p>1. Registe o serviço e os consumíveis em Artigos e serviços. 2. Em Registar compra, adicione as quantidades e custos de papel, toner e agrafos. 3. Defina abaixo o consumo por página ou por trabalho. Os agrafos entram apenas no custo; não são cobrados novamente.</p><form id="retail-service-component" class="form-grid"><div class="field"><label>Serviço<select name="service_id" required><option value="">Seleccionar serviço</option>${products.filter(p=>p.kind==='service').map(p=>`<option value="${p.id}">${escape(p.name)}</option>`).join('')}</select></label></div><div class="field"><label>Consumível<select name="supply_id" required><option value="">Seleccionar consumível</option>${products.filter(p=>p.kind==='supply').map(p=>`<option value="${p.id}">${escape(p.name)} (${escape(p.unit_label)})</option>`).join('')}</select></label></div>${input('Quantidade do consumível por página','per_unit','number','min="0" step="0.000001" value="0"')}${input('Quantidade do consumível por trabalho','per_job','number','min="0" step="0.000001" value="0"')}<p>Ex.: papel: 1 folha por página; agrafos: 1 por trabalho. Toner: se um cartucho render 1.000 páginas, use 0,001 cartucho por página. Para retirar um material do serviço, indique zero nos dois campos.</p><button class="btn btn-primary">Guardar consumo</button></form><div class="table-wrap"><table><thead><tr><th>Serviço</th><th>Consumível</th><th>Por página</th><th>Por trabalho</th></tr></thead><tbody>${components.map(c=>`<tr><td>${escape(names.get(c.service_id))}</td><td>${escape(names.get(c.supply_id))}</td><td>${c.per_unit}</td><td>${c.per_job}</td></tr>`).join('')||'<tr><td colspan="4">Ainda não há consumos definidos.</td></tr>'}</tbody></table></div></div>` : ''}
     <div class="card" id="retail-movement-panel"><h3 id="retail-movement-title">Vender</h3><form id="retail-movement" class="form-grid"><div class="field"><label>Produto<select name="product_id" required><option value="">Seleccionar produto</option>${options}</select></label></div><div class="field" hidden><label>Tipo<select name="kind"><option value="entry">Entrada / produção</option><option value="sale">Venda</option><option value="loss">Perda / quebra</option></select></label></div>${input('Data','date','date',`value="${today()}"`)}${input('Quantidade','quantity','number','min="1" step="1"')}<div id="retail-cost-fields" class="field full">
       <div class="field"><label>De onde saiu o dinheiro?<select name="funding_source" required><option value="">Seleccionar origem</option><option value="capital">Capital próprio / investimento</option><option value="sales">Dinheiro das vendas</option></select></label></div>
       ${input(stationery ? 'Quanto pagou por esta compra? (MZN)' : 'Custo total desta produção ou compra (MZN)','entry_cost','number','min="0" step="0.01"')}
@@ -97,6 +109,18 @@ export async function renderRetail(area, initialTab = null) {
     const product=products.find(p=>p.id===form.elements.product_id.value);
     const quantity=Number(form.elements.quantity.value||0);
     const total=Math.round(Number(product?.unit_price||0)*quantity*100)/100;
+    const recipe=components.filter(c=>c.service_id===product?.id);
+    let serviceCost=0;
+    let costReady=recipe.length>0;
+    for(const component of recipe) {
+      const supply=products.find(p=>p.id===component.supply_id);
+      if(supply?.average_cost==null) costReady=false;
+      serviceCost+=Math.round((Number(component.per_unit)*quantity+Number(component.per_job))*Number(supply?.average_cost||0)*100)/100;
+    }
+    const costText=product?.kind==='service'
+      ? `Custo do trabalho (materiais incluídos): ${costReady?formatMoney(serviceCost):'configure os consumíveis e os seus custos'}`
+      : `Custo por unidade: ${moneyOrUnknown(product?.average_cost)}`;
+    form.elements.quantity.closest('.field').querySelector('label').firstChild.textContent=product?.kind==='service'?'Quantidade de páginas':'Quantidade';
     const sale=form.elements.kind.value==='sale';
     const credit=form.elements.payment_method.value==='credit';
     const partial=form.elements.partial_payment.checked && !credit;
@@ -112,7 +136,7 @@ export async function renderRetail(area, initialTab = null) {
     form.elements.paid.max=String(total);
     document.querySelector('#retail-partial-fields').hidden=!partial;
     document.querySelector('#retail-sale-preview').textContent=product && quantity>0
-      ? `Preço: ${formatMoney(product.unit_price)} · Custo por unidade: ${moneyOrUnknown(product.average_cost)} · Total a ${credit?'receber':'pagar'}: ${formatMoney(total)}`
+      ? `Preço: ${formatMoney(product.unit_price)} · ${costText} · Total a ${credit?'receber':'pagar'}: ${formatMoney(total)}`
       : 'Seleccione o produto e a quantidade.';
   };
   form.addEventListener('input',()=>{updateCost();updateSale();});
@@ -121,6 +145,10 @@ export async function renderRetail(area, initialTab = null) {
   const refreshFields=()=>{
     const sale=form.elements.kind.value==='sale';
     const entry=form.elements.kind.value==='entry';
+    const selected=form.elements.product_id.value;
+    form.elements.product_id.innerHTML='<option value="">Seleccionar artigo ou serviço</option>'+products.filter(p=>sale?p.kind!=='supply':p.kind!=='service').map(p=>`<option value="${p.id}">${escape(p.name)}${p.kind==='service'?' (serviço)':` (stock: ${stockLabel(p)})`}</option>`).join('');
+    form.elements.product_id.value=selected;
+
     document.querySelector('#retail-cost-fields').hidden=!entry;
     form.elements.entry_cost.disabled=!entry;
     form.elements.funding_source.disabled=!entry;
@@ -136,6 +164,8 @@ export async function renderRetail(area, initialTab = null) {
     panels.forEach(name=>{document.querySelector(`#retail-${name}-panel`).hidden=tab!==name;});
     const movement=['sale','entry','loss'].includes(tab);
     document.querySelector('#retail-movement-panel').hidden=!movement;
+    const servicePanel=document.querySelector('#retail-service-panel');
+    if(servicePanel) servicePanel.hidden=tab!=='products';
     const valuation=document.querySelector('#retail-valuation-panel');
     if(valuation) valuation.hidden=tab!=='products' && tab!=='entry';
     if(movement) {
@@ -156,7 +186,23 @@ export async function renderRetail(area, initialTab = null) {
   form.elements.kind.addEventListener('change',refreshFields);
   form.elements.product_id.addEventListener('change',refreshFields);
   openTab(initialTab || (products.length ? 'sale' : 'products'));
-  bind('#retail-product',async fd=>supabase.from('retail_products').insert({area,name:String(fd.get('name')).trim(),unit_price:Number(fd.get('unit_price'))}),area);
+  bind('#retail-product',async fd=>supabase.from('retail_products').insert({area,name:String(fd.get('name')).trim(),unit_price:fd.get('product_kind')==='supply'?0:Number(fd.get('unit_price')),kind:fd.get('product_kind')||'product',unit_label:fd.get('unit_label')||'unidade'}),area);
+  if(stationery) {
+    const productForm=document.querySelector('#retail-product');
+    productForm.elements.product_kind.addEventListener('change',()=>{
+      const kind=productForm.elements.product_kind.value;
+      productForm.elements.unit_price.disabled=kind==='supply';
+      productForm.elements.unit_price.closest('.field').hidden=kind==='supply';
+      productForm.elements.unit_label.value=kind==='service'?'página':'unidade';
+    });
+    const recipeForm=document.querySelector('#retail-service-component');
+    const fillRecipe=()=>{
+      const c=components.find(c=>c.service_id===recipeForm.elements.service_id.value && c.supply_id===recipeForm.elements.supply_id.value);
+      recipeForm.elements.per_unit.value=c?.per_unit??0;recipeForm.elements.per_job.value=c?.per_job??0;
+    };
+    recipeForm.elements.service_id.addEventListener('change',fillRecipe);recipeForm.elements.supply_id.addEventListener('change',fillRecipe);
+    bind('#retail-service-component',async fd=>supabase.rpc('set_retail_service_component',{p_service:fd.get('service_id'),p_supply:fd.get('supply_id'),p_per_unit:Number(fd.get('per_unit')),p_per_job:Number(fd.get('per_job'))}),area);
+  }
   bind('#retail-movement',async fd=>{
     if(fd.get('kind')==='sale') return supabase.rpc('register_retail_sale',{
       p_product:fd.get('product_id'),p_quantity:Number(fd.get('quantity')),p_payment_method:fd.get('payment_method'),
