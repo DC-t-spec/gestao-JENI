@@ -12,24 +12,24 @@ const today = () => new Date().toISOString().slice(0, 10);
 
 export async function renderEggs() {
   setPageHeader('Ovos e poedeiras', 'Produção diária, stock, poedeiras e vendas');
-  const [{ data: summary, error }, { data: production }, { data: sales }, { data: pendingSales }] = await Promise.all([
+  const [{ data: summary, error }, { data: production }, { data: sales }, { data: eggTotals, error: totalsError }] = await Promise.all([
     supabase.from('egg_business_summary').select('*').single(),
     supabase.from('egg_production').select('*').order('production_date', { ascending: false }).limit(15),
     supabase.from('egg_sales').select('*').order('sale_date', { ascending: false }).limit(15),
-    supabase.from('egg_sales').select('id, total_amount').is('payment_method', null),
+    loadEggTotals(),
   ]);
-  if (error) {
-    dom.pageContent.innerHTML = `<div class="card"><h3>Configuração necessária</h3><p>Execute a actualização SQL no Supabase.</p><div class="feedback error">${error.message}</div></div>`;
+  if (error || totalsError) {
+    dom.pageContent.innerHTML = `<div class="card"><h3>Configuração necessária</h3><p>Execute a actualização SQL no Supabase.</p><div class="feedback error">${(error || totalsError).message}</div></div>`;
     return;
   }
-  const eggAmountDue = (pendingSales || []).reduce((total, sale) => total + Number(sale.total_amount || 0), 0);
+  const eggAmountDue = eggTotals.due;
   dom.pageContent.innerHTML = `<div class="grid gap-14">
     <div class="dashboard-grid">
       <div class="card stat"><h4>Poedeiras vivas</h4><strong>${formatNumber(summary.layers_alive)}</strong></div>
       <div class="card stat"><h4>Ovos produzidos</h4><strong>${formatNumber(summary.eggs_produced)}</strong></div>
       <div class="card stat"><h4>Ovos vendidos</h4><strong>${formatNumber(summary.eggs_sold)}</strong></div>
       <div class="card stat"><h4>Stock de ovos</h4><strong>${formatNumber(summary.eggs_in_stock)}</strong></div>
-      <div class="card stat"><h4>Receita de ovos</h4><strong>${formatMoney(summary.egg_revenue)}</strong></div>
+      <div class="card stat"><h4>Receita de ovos</h4><strong>${formatMoney(eggTotals.received)}</strong></div>
       <div class="card stat"><h4>Ovos por receber</h4><strong>${formatMoney(eggAmountDue)}</strong></div>
     </div>
     <div class="split">
@@ -233,4 +233,16 @@ function bind(formSelector, feedbackSelector, table, makeData, success) {
     if (error) return showFeedback(feedback, error.message, 'error');
     showFeedback(feedback, success, 'success'); await renderEggs();
   });
+}
+
+// Não usar o total facturado como receita; incluir todas as páginas de vendas.
+async function loadEggTotals() {
+  const totals = { received: 0, due: 0 };
+  for (let offset = 0; ; offset += 500) {
+    const { data, error } = await supabase.from('egg_sales')
+      .select('id, total_amount, payment_method').order('id').range(offset, offset + 499);
+    if (error) return { error };
+    for (const sale of data) totals[sale.payment_method ? 'received' : 'due'] += Number(sale.total_amount || 0);
+    if (data.length < 500) return { data: totals };
+  }
 }

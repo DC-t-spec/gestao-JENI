@@ -1,0 +1,38 @@
+// Instalar PGlite fora do checkout e definir PGLITE_MODULE para o caminho do pacote.
+const {PGlite}=require(process.env.PGLITE_MODULE||'@electric-sql/pglite');
+const fs=require('node:fs'),assert=require('node:assert/strict');
+(async()=>{
+ const db=new PGlite();
+ await db.exec(`create role authenticated; create role anon; create schema auth;
+ create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('test.uid',true),'')::uuid $$;
+ grant usage on schema auth to authenticated; grant execute on function auth.uid() to authenticated;
+ create table auth.users(id uuid primary key); insert into auth.users values('00000000-0000-0000-0000-000000000001');
+ set test.uid='00000000-0000-0000-0000-000000000001';
+ create table layer_entries(quantity int); create table layer_mortality(quantity int); create table egg_production(egg_count int);
+ create table egg_sales(egg_quantity int,total_amount numeric,payment_method text); create table sales(total_amount numeric);
+ create table company_projects(income_amount numeric); create table partner_dues(amount numeric);
+ create table institutional_transactions(amount numeric,direction text); create table funding_opportunities(status text);
+ create table company_tasks(status text,due_date date); create table partners(is_active boolean);
+ insert into egg_sales values(332,3100,'cash'),(90,840,null);`);
+ await db.exec(fs.readFileSync('supabase/20261019_comercio_e_receitas.sql','utf8'));
+ const one=async sql=>(await db.query(sql)).rows[0];
+ for(const view of ['egg_business_summary','management_dashboard']) assert.equal(Number((await one(`select egg_revenue from ${view}`)).egg_revenue),3100);
+ assert.equal(Number((await one('select total_income from company_financial_summary')).total_income),3100);
+ await db.exec('set role authenticated');
+ const p=await one("insert into retail_products(area,name,unit_price) values('papelaria','Caderno',25) returning id");
+ const other=await one("insert into retail_products(area,name,unit_price) values('gelinhos','Kbom',10) returning id");
+ const move=(kind,q,price=0,paid=0)=>one(`select register_retail_movement('${p.id}','2026-10-19','${kind}',${q},${price},${paid},'Cliente','') id`);
+ await move('entry',10);const sale=await move('sale',4,25,40);
+ assert.equal(Number((await one(`select stock from retail_stock where id='${p.id}'`)).stock),6);
+ assert.equal(Number((await one(`select amount_paid from retail_movements where id='${sale.id}'`)).amount_paid),40);
+ await assert.rejects(()=>move('sale',7,25,0),/stock/);
+ const pay=amount=>db.exec(`select register_retail_payment('${sale.id}','2026-10-19',${amount})`);
+ await assert.rejects(()=>pay(61),/dívida/);await pay(60);await assert.rejects(()=>pay(1),/dívida/);
+ await move('loss',1);
+ assert.equal(Number((await one(`select stock from retail_stock where id='${p.id}'`)).stock),5);
+ assert.equal(Number((await one(`select stock from retail_stock where id='${other.id}'`)).stock),0);
+ assert.equal(Number((await one(`select sum(amount) total from retail_payments where sale_id='${sale.id}'`)).total),100);
+ await assert.rejects(()=>db.exec('update retail_movements set amount_paid=0'),/permission denied/);
+ await db.exec("reset role; set test.uid=''");await assert.rejects(()=>move('entry',1),/Autenticação/);
+ await db.close();console.log('PASS: receitas de ovos, stock, vendas parciais, perdas, cobranças, separação das áreas e permissões.');
+})().catch(e=>{console.error(e);process.exit(1)});

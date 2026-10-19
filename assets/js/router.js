@@ -11,7 +11,10 @@ import { renderEggs } from './pages/ovos.js';
 import { renderDebts } from './pages/dividas.js';
 import { renderGeneralManagement } from './pages/gestao-geral.js';
 
+import { renderRetail } from './pages/comercio.js';
+
 const routes = {
+  papelaria: () => renderRetail('papelaria'), gelinhos: () => renderRetail('gelinhos'),
   dashboard: renderDashboard, compras: renderPurchases, entradas: renderBirdEntries,
   vendas: renderSales, mortalidade: renderMortality, ovos: renderEggs, dividas: renderDebts,
   relatorios: renderReports, configuracao: renderSettings, 'gestao-geral': renderGeneralManagement,
