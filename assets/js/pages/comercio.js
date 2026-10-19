@@ -7,7 +7,7 @@ const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({'&':'&amp
 const today = () => new Date().toISOString().slice(0,10);
 const input = (label, name, type='text', extra='') => `<div class="field"><label>${label}<input name="${name}" type="${type}" ${extra} required></label></div>`;
 
-export async function renderRetail(area) {
+export async function renderRetail(area, initialTab = null) {
   setPageHeader(area === 'papelaria' ? 'Papelaria' : 'Gelinhos e Kbom', 'Produtos, stock, vendas e valores por receber');
   dom.pageContent.innerHTML = '<div class="card">A carregar…</div>';
   const products = [];
@@ -29,6 +29,7 @@ export async function renderRetail(area) {
     movements.push(...result.data);
     if(result.data.length<500) break;
   }
+  const stationery = area === 'papelaria';
   const sales=movements.filter(m=>m.kind==='sale');
   const revenue=sales.reduce((n,s)=>n+Number(s.amount_paid),0);
   const due=sales.reduce((n,s)=>n+Number(s.total_amount)-Number(s.amount_paid),0);
@@ -41,43 +42,80 @@ export async function renderRetail(area) {
   const options=products.map(p=>`<option value="${p.id}">${escape(p.name)} (stock: ${p.stock})</option>`).join('');
   const names=new Map(products.map(p=>[p.id,p.name]));
   dom.pageContent.innerHTML=`<div class="grid gap-14">
-    <div class="dashboard-grid"><div class="card stat"><h4>Receita recebida</h4><strong>${formatMoney(revenue)}</strong></div><div class="card stat"><h4>Por receber</h4><strong>${formatMoney(due)}</strong></div><div class="card stat"><h4>Produtos</h4><strong>${products.length}</strong></div></div>
-    <div class="dashboard-grid"><div class="card stat"><h4>Custo dos produtos vendidos</h4><strong>${formatMoney(costSold)}</strong></div><div class="card stat"><h4>Lucro bruto das vendas</h4><strong>${formatMoney(grossProfit)}</strong></div><div class="card stat"><h4>Valor do stock ao custo</h4><strong>${formatMoney(stockValue)}</strong></div></div>
-    <p>Lucro bruto = valor das vendas − custo dos produtos vendidos. Inclui vendas a crédito; a receita recebida continua separada. Perdas/quebras e outras despesas não estão deduzidas neste lucro.</p>
+    <div class="dashboard-grid"><div class="card stat"><h4>Receita recebida</h4><strong>${formatMoney(revenue)}</strong></div><div class="card stat"><h4>Por receber</h4><strong>${formatMoney(due)}</strong></div><div class="card stat"><h4>Lucro bruto das vendas</h4><strong>${formatMoney(grossProfit)}</strong></div><div class="card stat"><h4>Stock ao custo</h4><strong>${formatMoney(stockValue)}</strong></div></div>
+    <details><summary>Como são calculados os valores?</summary><p>Custo dos produtos vendidos: ${formatMoney(costSold)}. Lucro bruto = vendas − custo dos produtos vendidos, incluindo vendas a crédito. Perdas e outras despesas não estão deduzidas. A receita recebida mostra apenas o que já foi pago.</p></details>
     ${unknownCosts ? '<div class="feedback error">Existem registos antigos sem custo. Os totais de custo, lucro e valorização são parciais; esses registos não são tratados como custo zero.</div>' : ''}
     <div id="retail-feedback" role="status"></div>
-    <div class="split"><div class="card"><h3>Registar produto</h3><form id="retail-product" class="form-grid">${input('Nome / marca / sabor','name','text','maxlength="120"')}${input('Preço de venda (MZN)','unit_price','number','min="0" step="0.01"')}<button class="btn btn-primary">Guardar produto</button></form></div>
+    <div class="toolbar" role="group" aria-label="O que deseja fazer?">
+      <button type="button" class="btn btn-secondary" data-retail-tab="sale">Vender</button>
+      <button type="button" class="btn btn-secondary" data-retail-tab="entry">${stationery ? 'Registar compra' : 'Adicionar stock'}</button>
+      <button type="button" class="btn btn-secondary" data-retail-tab="products">Produtos e stock</button>
+      <button type="button" class="btn btn-secondary" data-retail-tab="payments">Receber dívida</button>
+      <button type="button" class="btn btn-secondary" data-retail-tab="history">Histórico e perdas</button>
+    </div>
+    <div id="retail-products-panel" class="split" hidden><div class="card"><h3>Novo produto</h3><form id="retail-product" class="form-grid">${input(stationery ? 'Nome do artigo' : 'Produto / marca / sabor','name','text','maxlength="120"')}${input('Preço de venda (MZN)','unit_price','number','min="0" step="0.01"')}<button class="btn btn-primary">Guardar produto</button></form></div>
     <div class="card"><h3>Stock actual</h3><div class="table-wrap"><table><thead><tr><th>Produto</th><th>Stock</th><th>Preço</th><th>Custo médio unitário</th><th>Valor ao custo</th></tr></thead><tbody>${products.map(p=>`<tr><td>${escape(p.name)}</td><td>${p.stock}</td><td>${formatMoney(p.unit_price)}</td><td>${moneyOrUnknown(p.average_cost)}</td><td>${moneyOrUnknown(p.stock_value)}</td></tr>`).join('')||'<tr><td colspan="5">Registe o primeiro produto.</td></tr>'}</tbody></table></div></div></div>
-    <div class="card"><h3>Registar movimento</h3><form id="retail-movement" class="form-grid"><div class="field"><label>Produto<select name="product_id" required><option value="">Seleccionar produto</option>${options}</select></label></div><div class="field"><label>Tipo<select name="kind"><option value="entry">Entrada / produção</option><option value="sale">Venda</option><option value="loss">Perda / quebra</option></select></label></div>${input('Data','date','date',`value="${today()}"`)}${input('Quantidade','quantity','number','min="1" step="1"')}<div id="retail-cost-fields" class="field full"><h4>${area === 'papelaria' ? 'Custo de aquisição do lote' : 'Custo técnico de produção / aquisição do lote'}</h4><div class="form-grid">${input(area === 'papelaria' ? 'Compra dos produtos (MZN)' : 'Ingredientes / compra do produto (MZN)','materials_cost','number','min="0" step="0.01" value="0"')}${input('Embalagens (MZN)','packaging_cost','number','min="0" step="0.01" value="0"')}${input('Energia e água (MZN)','energy_cost','number','min="0" step="0.01" value="0"')}${input('Mão de obra (MZN)','labor_cost','number','min="0" step="0.01" value="0"')}${input('Transporte e outros custos (MZN)','other_cost','number','min="0" step="0.01" value="0"')}</div><p>Indique os custos totais deste lote. Custo unitário = custo total ÷ quantidade de produtos finais.</p><output id="retail-cost-preview"></output></div><div id="retail-sale-fields" class="field full" hidden><div class="form-grid">${input('Cliente','customer')}${input('Preço unitário (MZN)','price','number','min="0" step="0.01"')}${input('Valor pago agora (MZN)','paid','number','min="0" step="0.01" value="0"')}<p>O valor restante permanece por receber.</p></div></div><div class="field full"><label>Observações<textarea name="notes"></textarea></label></div><button class="btn btn-primary" ${products.length?'':'disabled'}>Guardar movimento</button></form></div>
-    ${products.some(p=>p.average_cost==null && Number(p.stock)>0) ? `<div class="card"><h3>Valorizar stock antigo</h3><p>Indique o custo unitário real do stock existente para permitir novos movimentos. Os custos de vendas anteriores continuam desconhecidos.</p><form id="retail-valuation" class="form-grid"><div class="field"><label>Produto<select name="product_id" required>${products.filter(p=>p.average_cost==null && Number(p.stock)>0).map(p=>`<option value="${p.id}">${escape(p.name)}</option>`).join('')}</select></label></div>${input('Custo unitário do stock existente (MZN)','unit_cost','number','min="0" step="0.000001"')}<button class="btn btn-primary">Valorizar stock</button></form></div>` : ''}
-    <div class="card"><h3>Pagamentos pendentes</h3><form id="retail-payment" class="form-grid"><div class="field"><label>Venda<select name="sale_id" required><option value="">Seleccionar dívida</option>${sales.filter(s=>Number(s.amount_paid)<Number(s.total_amount)).map(s=>`<option value="${s.id}">${escape(s.customer_name)} — ${escape(names.get(s.product_id))} — ${s.movement_date} — ${formatMoney(Number(s.total_amount)-Number(s.amount_paid))}</option>`).join('')}</select></label></div>${input('Data','date','date',`value="${today()}"`)}${input('Valor recebido (MZN)','amount','number','min="0.01" step="0.01"')}<button class="btn btn-primary">Registar pagamento</button></form></div>
-    <div class="card"><h3>Movimentos recentes</h3><div class="table-wrap"><table><thead><tr><th>Data</th><th>Produto</th><th>Tipo</th><th>Quantidade</th><th>Cliente</th><th>Total</th><th>Recebido</th><th>Por receber</th><th>Custo do movimento</th><th>Lucro bruto</th><th>Observações</th></tr></thead><tbody>${movements.slice(0,50).map(m=>`<tr><td>${escape(m.movement_date)}</td><td>${escape(names.get(m.product_id))}</td><td>${{entry:'Entrada',sale:'Venda',loss:'Perda'}[m.kind]}</td><td>${m.quantity}</td><td>${escape(m.customer_name||'-')}</td><td>${formatMoney(m.total_amount)}</td><td>${formatMoney(m.amount_paid)}</td><td>${formatMoney(Number(m.total_amount)-Number(m.amount_paid))}</td><td>${moneyOrUnknown(m.total_cost)}</td><td>${m.kind==='sale' && m.total_cost!=null ? formatMoney(Number(m.total_amount)-Number(m.total_cost)) : '-'}</td><td>${escape(m.notes||'-')}</td></tr>`).join('')||'<tr><td colspan="11">Sem movimentos.</td></tr>'}</tbody></table></div></div></div>`;
+    <div class="card" id="retail-movement-panel"><h3 id="retail-movement-title">Vender</h3><form id="retail-movement" class="form-grid"><div class="field"><label>Produto<select name="product_id" required><option value="">Seleccionar produto</option>${options}</select></label></div><div class="field" hidden><label>Tipo<select name="kind"><option value="entry">Entrada / produção</option><option value="sale">Venda</option><option value="loss">Perda / quebra</option></select></label></div>${input('Data','date','date',`value="${today()}"`)}${input('Quantidade','quantity','number','min="1" step="1"')}<div id="retail-cost-fields" class="field full">
+      ${input(stationery ? 'Quanto pagou por esta compra? (MZN)' : 'Custo total desta produção ou compra (MZN)','entry_cost','number','min="0" step="0.01"')}
+      <p>${stationery ? 'Indique o valor total pago pelos artigos desta entrada. O custo por artigo é calculado automaticamente.' : 'Indique quanto gastou para obter esta quantidade de produtos prontos.'}</p>
+      ${stationery ? '' : `<details id="retail-cost-calculator"><summary>Preciso de ajuda para calcular o custo</summary><div class="form-grid">${input('Ingredientes ou compra dos produtos (MZN)','materials_cost','number','min="0" step="0.01" value="0"')}${input('Saquinhos / embalagens (MZN)','packaging_cost','number','min="0" step="0.01" value="0"')}${input('Energia e água (MZN)','energy_cost','number','min="0" step="0.01" value="0"')}${input('Mão de obra (MZN)','labor_cost','number','min="0" step="0.01" value="0"')}${input('Outros gastos (MZN)','other_cost','number','min="0" step="0.01" value="0"')}</div></details>`}
+      <output id="retail-cost-preview"></output></div><div id="retail-sale-fields" class="field full" hidden><div class="form-grid">${input('Cliente','customer')}${input('Preço unitário (MZN)','price','number','min="0" step="0.01"')}${input('Valor pago agora (MZN)','paid','number','min="0" step="0.01" value="0"')}<p>O valor restante permanece por receber.</p></div></div><details class="field full"><summary>Adicionar observações</summary><textarea name="notes" aria-label="Observações"></textarea></details><button id="retail-movement-submit" class="btn btn-primary" ${products.length?'':'disabled'}>Guardar movimento</button></form></div>
+    ${products.some(p=>p.average_cost==null && Number(p.stock)>0) ? `<div class="card" id="retail-valuation-panel" hidden><h3>Indicar custo do stock antigo</h3><p>Indique o custo unitário real do stock existente para permitir novos movimentos. Os custos de vendas anteriores continuam desconhecidos.</p><form id="retail-valuation" class="form-grid"><div class="field"><label>Produto<select name="product_id" required>${products.filter(p=>p.average_cost==null && Number(p.stock)>0).map(p=>`<option value="${p.id}">${escape(p.name)}</option>`).join('')}</select></label></div>${input('Custo unitário do stock existente (MZN)','unit_cost','number','min="0" step="0.000001"')}<button class="btn btn-primary">Valorizar stock</button></form></div>` : ''}
+    <div class="card" id="retail-payments-panel" hidden><h3>Receber dívida</h3><form id="retail-payment" class="form-grid"><div class="field"><label>Venda<select name="sale_id" required><option value="">Seleccionar dívida</option>${sales.filter(s=>Number(s.amount_paid)<Number(s.total_amount)).map(s=>`<option value="${s.id}">${escape(s.customer_name)} — ${escape(names.get(s.product_id))} — ${s.movement_date} — ${formatMoney(Number(s.total_amount)-Number(s.amount_paid))}</option>`).join('')}</select></label></div>${input('Data','date','date',`value="${today()}"`)}${input('Valor recebido (MZN)','amount','number','min="0.01" step="0.01"')}<button class="btn btn-primary">Registar pagamento</button></form></div>
+    <div class="card" id="retail-history-panel" hidden><h3>Histórico</h3><button type="button" class="btn btn-secondary" id="retail-record-loss">Registar perda / quebra</button><h4>Movimentos recentes</h3><div class="table-wrap"><table><thead><tr><th>Data</th><th>Produto</th><th>Tipo</th><th>Quantidade</th><th>Cliente</th><th>Total</th><th>Recebido</th><th>Por receber</th><th>Custo do movimento</th><th>Lucro bruto</th><th>Observações</th></tr></thead><tbody>${movements.slice(0,50).map(m=>`<tr><td>${escape(m.movement_date)}</td><td>${escape(names.get(m.product_id))}</td><td>${{entry:'Entrada',sale:'Venda',loss:'Perda'}[m.kind]}</td><td>${m.quantity}</td><td>${escape(m.customer_name||'-')}</td><td>${formatMoney(m.total_amount)}</td><td>${formatMoney(m.amount_paid)}</td><td>${formatMoney(Number(m.total_amount)-Number(m.amount_paid))}</td><td>${moneyOrUnknown(m.total_cost)}</td><td>${m.kind==='sale' && m.total_cost!=null ? formatMoney(Number(m.total_amount)-Number(m.total_cost)) : '-'}</td><td>${escape(m.notes||'-')}</td></tr>`).join('')||'<tr><td colspan="11">Sem movimentos.</td></tr>'}</tbody></table></div></div></div>`;
   const form=document.querySelector('#retail-movement');
-  const costFields=['materials_cost','packaging_cost','energy_cost','labor_cost','other_cost'];
+  const costFields=stationery ? [] : ['materials_cost','packaging_cost','energy_cost','labor_cost','other_cost'];
+  const calculator=document.querySelector('#retail-cost-calculator');
   const updateCost=()=>{
-    const total=costFields.reduce((n,name)=>n+Number(form.elements[name].value||0),0);
+    if(calculator?.open) form.elements.entry_cost.value=costFields.reduce((n,name)=>n+Number(form.elements[name].value||0),0).toFixed(2);
+    const total=Number(form.elements.entry_cost.value||0);
     const quantity=Number(form.elements.quantity.value||0);
-    document.querySelector('#retail-cost-preview').textContent=`Custo total: ${formatMoney(total)} · Custo por produto final: ${quantity>0?formatMoney(total/quantity):'indique a quantidade'}`;
+    document.querySelector('#retail-cost-preview').textContent=`Custo por unidade: ${quantity>0?formatMoney(total/quantity):'indique a quantidade'}`;
   };
   form.addEventListener('input',updateCost);
+  calculator?.addEventListener('toggle',()=>{refreshFields();});
   const refreshFields=()=>{
     const sale=form.elements.kind.value==='sale';
     const entry=form.elements.kind.value==='entry';
     document.querySelector('#retail-cost-fields').hidden=!entry;
-    costFields.forEach(name=>{form.elements[name].disabled=!entry;});
+    form.elements.entry_cost.disabled=!entry;
+    form.elements.entry_cost.readOnly=Boolean(calculator?.open);
+    costFields.forEach(name=>{form.elements[name].disabled=!entry || !calculator?.open;});
     updateCost();
     document.querySelector('#retail-sale-fields').hidden=!sale;
     ['customer','price','paid'].forEach(name=>{form.elements[name].disabled=!sale;});
     form.elements.price.value=products.find(p=>p.id===form.elements.product_id.value)?.unit_price??'';
   };
+  const panels=['products','payments','history'];
+  const openTab=tab=>{
+    panels.forEach(name=>{document.querySelector(`#retail-${name}-panel`).hidden=tab!==name;});
+    const movement=['sale','entry','loss'].includes(tab);
+    document.querySelector('#retail-movement-panel').hidden=!movement;
+    const valuation=document.querySelector('#retail-valuation-panel');
+    if(valuation) valuation.hidden=tab!=='products' && tab!=='entry';
+    if(movement) {
+      form.elements.kind.value=tab;
+      const title=tab==='sale'?'Registar venda':tab==='loss'?'Registar perda / quebra':stationery?'Registar compra':'Adicionar produção ou compra';
+      document.querySelector('#retail-movement-title').textContent=title;
+      document.querySelector('#retail-movement-submit').textContent=tab==='sale'?'Guardar venda':tab==='loss'?'Guardar perda':'Guardar entrada';
+      refreshFields();
+    }
+    document.querySelectorAll('[data-retail-tab]').forEach(button=>{
+      const active=button.dataset.retailTab===tab || (tab==='loss' && button.dataset.retailTab==='history');
+      button.classList.toggle('btn-primary',active);button.classList.toggle('btn-secondary',!active);
+      button.setAttribute('aria-pressed',String(active));
+    });
+  };
+  document.querySelectorAll('[data-retail-tab]').forEach(button=>button.addEventListener('click',()=>openTab(button.dataset.retailTab)));
+  document.querySelector('#retail-record-loss').addEventListener('click',()=>openTab('loss'));
   form.elements.kind.addEventListener('change',refreshFields);
   form.elements.product_id.addEventListener('change',refreshFields);
-  refreshFields();
+  openTab(initialTab || (products.length ? 'sale' : 'products'));
   bind('#retail-product',async fd=>supabase.from('retail_products').insert({area,name:String(fd.get('name')).trim(),unit_price:Number(fd.get('unit_price'))}),area);
   bind('#retail-movement',async fd=>supabase.rpc('register_retail_movement',{
     p_product:fd.get('product_id'),p_date:fd.get('date'),p_kind:fd.get('kind'),p_quantity:Number(fd.get('quantity')),
-    p_entry_cost:fd.get('kind')==='entry'?costFields.reduce((n,name)=>n+Number(fd.get(name)||0),0):null,
-    p_price:Number(fd.get('price')||0),p_paid:Number(fd.get('paid')||0),p_customer:fd.get('customer')||null,p_notes:[fd.get('notes'),fd.get('kind')==='entry'?`Custos do lote (MZN): compra/ingredientes ${fd.get('materials_cost')}; embalagens ${fd.get('packaging_cost')}; energia/água ${fd.get('energy_cost')}; mão de obra ${fd.get('labor_cost')}; outros ${fd.get('other_cost')}.`:null].filter(Boolean).join('\n')||null,
+    p_entry_cost:fd.get('kind')==='entry'?Number(fd.get('entry_cost')):null,
+    p_price:Number(fd.get('price')||0),p_paid:Number(fd.get('paid')||0),p_customer:fd.get('customer')||null,p_notes:[fd.get('notes'),fd.get('kind')==='entry' && calculator?.open?`Custos do lote (MZN): compra/ingredientes ${fd.get('materials_cost')}; embalagens ${fd.get('packaging_cost')}; energia/água ${fd.get('energy_cost')}; mão de obra ${fd.get('labor_cost')}; outros ${fd.get('other_cost')}.`:null].filter(Boolean).join('\n')||null,
   }),area);
   if(document.querySelector('#retail-valuation')) bind('#retail-valuation',async fd=>supabase.rpc('value_retail_stock',{p_product:fd.get('product_id'),p_unit_cost:Number(fd.get('unit_cost'))}),area);
   bind('#retail-payment',async fd=>supabase.rpc('register_retail_payment',{p_sale:fd.get('sale_id'),p_date:fd.get('date'),p_amount:Number(fd.get('amount'))}),area);
@@ -87,7 +125,7 @@ function bind(selector,save,area) {
     event.preventDefault(); const button=event.currentTarget.querySelector('button');
     if(button.disabled) return;
     button.disabled=true;
-    try { const {error}=await save(new FormData(event.currentTarget)); if(error) throw error; await renderRetail(area); }
+    try { const {error}=await save(new FormData(event.currentTarget)); if(error) throw error; const tab=document.querySelector('[data-retail-tab][aria-pressed="true"]')?.dataset.retailTab; await renderRetail(area,tab); showFeedback(document.querySelector('#retail-feedback'),'Registo guardado.','success'); }
     catch(error) {showFeedback(document.querySelector('#retail-feedback'),error.message,'error');}
     finally {button.disabled=false;}
   });

@@ -35,10 +35,12 @@ O teste de base de dados usa PostgreSQL temporário via PGlite e valida a migra�
 
 ## Custo de aquisição e custo técnico
 
-Aplicar também, uma vez e após a migração anterior, `supabase/20261019_custos_comercio.sql`. Nas entradas/produção, informar a quantidade final do lote e os custos totais de compra/ingredientes, embalagens, energia/água, mão de obra e transporte/outros. A discriminação fica nas observações do movimento. O custo total dividido pela quantidade produzida dá o custo unitário do lote.
+Aplicar também, uma vez e após a migração anterior, `supabase/20261019_custos_comercio.sql`. Na papelaria, usar “Registar compra” e informar o artigo, a quantidade e o valor total pago pela compra. Não existem campos de produção ou embalagens nesta área. Nos gelinhos, usar “Adicionar stock” e informar a quantidade final e o custo total de produção ou compra. A calculadora de ingredientes, saquinhos, energia, mão de obra e outros gastos é opcional; quando usada, a discriminação fica nas observações do movimento. O custo total dividido pela quantidade dá o custo unitário.
 
 O stock usa custo médio ponderado: `(valor do stock anterior + custo do novo lote) / (quantidade anterior + quantidade recebida)`. As vendas e perdas guardam o custo na data do registo; novas entradas não alteram o custo de vendas anteriores. A data informada não reordena o cálculo: o custo segue a ordem de registo dos movimentos.
 
 O painel mostra custo dos produtos vendidos, lucro bruto sobre todas as vendas (incluindo as que estão a crédito) e valor do stock ao custo. Receita recebida e dívida permanecem separadas. O lucro bruto não deduz perdas/quebras nem despesas que não foram incluídas nos custos dos lotes.
 
 Não se inventam custos de movimentos antigos: ficam como “Não informado” e os totais afectados são assinalados como parciais. Para produtos com stock anterior sem custo, o formulário “Valorizar stock antigo” permite indicar uma única vez o custo unitário do stock actual. Isto permite novos movimentos sem modificar o histórico de vendas.
+
+A interface mostra uma tarefa de cada vez: Vender, Registar compra/Adicionar stock, Produtos e stock, Receber dívida e Histórico e perdas. Começa na venda quando já existem produtos; sem produtos, começa no cadastro. As explicações de cálculo e observações ficam recolhidas até serem necessárias. Esta simplificação não exige nova migração SQL.
