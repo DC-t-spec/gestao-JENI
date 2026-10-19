@@ -52,3 +52,22 @@ Aplicar `supabase/20261019_venda_rapida_comercio.sql` depois das duas migraçõe
 A venda normal fica paga pelo total. “A crédito — pagar depois” exige o cliente e mantém o total em dívida. A opção recolhida “Cliente ou pagamento parcial” permite identificar o cliente ou indicar um recebimento parcial; se restar dívida, o cliente é obrigatório. O método escolhido é guardado na venda e no recebimento inicial. Pagamentos posteriores continuam pelo formulário Receber dívida.
 
 O custo continua a ser declarado nas compras/produção e calculado no stock; a venda reutiliza-o automaticamente. Registos antigos sem método de pagamento mantêm esse campo desconhecido.
+
+## Dinheiro disponível e reposição de stock
+
+Aplicar uma vez `supabase/20261019_caixa_comercio.sql`, depois da migração de venda rápida. Ao registar uma compra/produção, indicar se foi paga com capital próprio ou com dinheiro das vendas. O custo contabilístico e a quantidade de stock continuam separados desta origem do dinheiro.
+
+O painel distingue:
+
+- Total recebido das vendas: soma dos pagamentos efectivamente recebidos, sem descontar compras.
+- Dinheiro disponível das vendas: pagamentos recebidos menos compras pagas com esse dinheiro.
+- Capital aplicado no stock: compras financiadas por investimento próprio; aparece nos detalhes e não entra nas receitas de vendas.
+- Lucro bruto: vendas menos o custo dos produtos vendidos, e não o saldo em caixa.
+
+Exemplo confirmado pelo utilizador: capital de 180 + 180 + 400 = 760 MZN; vendas recebidas de 1316 MZN; segunda compra de Kbom de 400 MZN paga com vendas. Dinheiro disponível: 1316 − 400 = 916 MZN. O stock remanescente mantém a sua valorização ao custo.
+
+No Histórico, confirmar a origem das compras anteriores: as três entradas iniciais como Capital e a reposição de Kbom como Dinheiro das vendas. Não há alteração automática desses registos remotos. A origem pode ser corrigida sem criar outra compra, mudar stock ou reescrever vendas. Sem origem/custo conhecido em todas as compras com custo, o saldo fica “Por apurar”. Registos gratuitos não precisam de classificação para apurar o saldo.
+
+O saldo abrange apenas os movimentos registados nesta área. Não inclui levantamentos, outras despesas ou capital ainda não aplicado. O custo total registado numa entrada é tratado como pago pela fonte indicada; não há contas a pagar a fornecedores neste fluxo.
+
+Teste adicional: `node tests/retail-cash.test.mjs`.

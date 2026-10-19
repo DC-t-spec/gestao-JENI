@@ -1,0 +1,12 @@
+import assert from 'node:assert/strict';
+import { summarizeRetailCash } from '../assets/js/services/retail-cash.js';
+const entry=(cost,source)=>({kind:'entry',total_cost:cost,funding_source:source});
+const sale=paid=>({kind:'sale',amount_paid:paid});
+const example=[entry(180,'capital'),entry(180,'capital'),entry(400,'capital'),sale(600),entry(400,'sales'),sale(320),sale(210),sale(186)];
+assert.deepEqual(summarizeRetailCash(example),{received:1316,capital:760,reinvested:400,unclassified:0,available:916});
+assert.equal(summarizeRetailCash([...example,sale(0)]).available,916);
+assert.equal(summarizeRetailCash([...example,entry(50,null)]).available,null);
+assert.equal(summarizeRetailCash([...example,entry(null,'sales')]).available,null);
+assert.equal(summarizeRetailCash([...example,{kind:'loss',total_cost:20}]).available,916);
+assert.equal(summarizeRetailCash([entry(10,'sales')]).available,-10);
+console.log('PASS: exemplo real 1316 recebidos − 400 reinvestidos = 916 disponíveis; 760 de capital separado; compras sem origem não inventam saldo.');
