@@ -32,3 +32,13 @@ PGLITE_MODULE=/tmp/jeni-validation/node_modules/@electric-sql/pglite node tests/
 ```
 
 O teste de base de dados usa PostgreSQL temporário via PGlite e valida a migração, receitas recebidas, stock, pagamentos parciais, perdas, rejeição de excesso de stock/pagamento e permissões. O teste de navegador usa API simulada e não envia registos ao Supabase real.
+
+## Custo de aquisição e custo técnico
+
+Aplicar também, uma vez e após a migração anterior, `supabase/20261019_custos_comercio.sql`. Nas entradas/produção, informar a quantidade final do lote e os custos totais de compra/ingredientes, embalagens, energia/água, mão de obra e transporte/outros. A discriminação fica nas observações do movimento. O custo total dividido pela quantidade produzida dá o custo unitário do lote.
+
+O stock usa custo médio ponderado: `(valor do stock anterior + custo do novo lote) / (quantidade anterior + quantidade recebida)`. As vendas e perdas guardam o custo na data do registo; novas entradas não alteram o custo de vendas anteriores. A data informada não reordena o cálculo: o custo segue a ordem de registo dos movimentos.
+
+O painel mostra custo dos produtos vendidos, lucro bruto sobre todas as vendas (incluindo as que estão a crédito) e valor do stock ao custo. Receita recebida e dívida permanecem separadas. O lucro bruto não deduz perdas/quebras nem despesas que não foram incluídas nos custos dos lotes.
+
+Não se inventam custos de movimentos antigos: ficam como “Não informado” e os totais afectados são assinalados como parciais. Para produtos com stock anterior sem custo, o formulário “Valorizar stock antigo” permite indicar uma única vez o custo unitário do stock actual. Isto permite novos movimentos sem modificar o histórico de vendas.
