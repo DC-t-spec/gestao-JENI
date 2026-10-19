@@ -44,9 +44,24 @@ export async function renderRetail(area, initialTab = null) {
   const options=products.map(p=>`<option value="${p.id}">${escape(p.name)} (stock: ${p.stock})</option>`).join('');
   const names=new Map(products.map(p=>[p.id,p.name]));
   dom.pageContent.innerHTML=`<div class="grid gap-14">
-    <div class="dashboard-grid"><div class="card stat"><h4>Dinheiro disponível das vendas</h4><strong>${cash.available == null ? 'Por apurar' : formatMoney(cash.available)}</strong></div><div class="card stat"><h4>Por receber</h4><strong>${formatMoney(due)}</strong></div><div class="card stat"><h4>Total recebido das vendas</h4><strong>${formatMoney(revenue)}</strong></div><div class="card stat"><h4>Stock ao custo</h4><strong>${formatMoney(stockValue)}</strong></div></div>
-    <details><summary>Ver compras, capital e lucro</summary><div class="dashboard-grid"><div class="card stat"><h4>Lucro bruto das vendas</h4><strong>${formatMoney(grossProfit)}</strong></div><div class="card stat"><h4>Compras pagas com as vendas</h4><strong>${formatMoney(cash.reinvested)}</strong></div><div class="card stat"><h4>Capital aplicado no stock</h4><strong>${formatMoney(cash.capital)}</strong></div></div></details>
-    <p>Dinheiro disponível = total recebido − compras pagas com as vendas. O capital aplicado no stock é apresentado à parte. Este saldo considera apenas vendas e compras aqui registadas.</p>
+    <section class="retail-summary" aria-labelledby="retail-cash-heading">
+      <div class="retail-summary-heading"><h3 id="retail-cash-heading">Dinheiro das vendas</h3><span>Valores acumulados</span></div>
+      <div class="retail-summary-cash">
+        <div class="card retail-metric retail-metric-main"><h4>Disponível após compras</h4><strong>${cash.available == null ? 'Por apurar' : formatMoney(cash.available)}</strong><p>Recebido menos reposição de stock.</p></div>
+        <div class="card retail-metric"><h4>Total recebido</h4><strong>${formatMoney(revenue)}</strong><p>Pagamentos das vendas, antes das compras.</p></div>
+        <div class="card retail-metric"><h4>Usado para repor stock</h4><strong>${formatMoney(cash.reinvested)}</strong><p>Compras pagas com dinheiro das vendas.</p></div>
+      </div>
+      <p class="retail-summary-note">O disponível considera apenas as vendas e compras registadas nesta área.</p>
+    </section>
+    <section class="retail-summary" aria-labelledby="retail-business-heading">
+      <div class="retail-summary-heading"><h3 id="retail-business-heading">Situação do negócio</h3></div>
+      <div class="retail-summary-business">
+        <div class="card retail-metric"><h4>Por receber</h4><strong>${formatMoney(due)}</strong><p>Vendas que os clientes ainda devem.</p></div>
+        <div class="card retail-metric"><h4>Capital investido</h4><strong>${formatMoney(cash.capital)}</strong><p>Dinheiro próprio aplicado no stock.</p></div>
+        <div class="card retail-metric"><h4>Stock ao custo</h4><strong>${formatMoney(stockValue)}</strong><p>Valor dos produtos ainda disponíveis.</p></div>
+        <div class="card retail-metric"><h4>Lucro bruto das vendas</h4><strong>${formatMoney(grossProfit)}</strong><p>Vendas menos custo dos produtos vendidos.</p></div>
+      </div>
+    </section>
     ${cash.unclassified ? `<div class="feedback error">Falta indicar a origem do dinheiro de ${cash.unclassified} compra(s), ou o seu custo. Confirme no Histórico para apurar o dinheiro disponível.</div>` : ''}
     <details><summary>Como são calculados os valores?</summary><p>Custo dos produtos vendidos: ${formatMoney(costSold)}. Lucro bruto = vendas − custo dos produtos vendidos, incluindo vendas a crédito. Perdas e outras despesas não estão deduzidas. A receita recebida mostra apenas o que já foi pago.</p></details>
     ${unknownCosts ? '<div class="feedback error">Existem registos antigos sem custo. Os totais de custo, lucro e valorização são parciais; esses registos não são tratados como custo zero.</div>' : ''}

@@ -57,3 +57,96 @@ th {
     grid-template-columns: 1fr;
   }
 }
+
+/* Resumos de papelaria e gelinhos: caixa primeiro, património e resultado depois. */
+.retail-summary {
+  min-width: 0;
+}
+.retail-summary-heading {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.retail-summary-heading h3 {
+  margin: 0;
+  font-size: 1rem;
+}
+.retail-summary-heading span,
+.retail-summary-note {
+  color: var(--muted);
+  font-size: .85rem;
+}
+.retail-summary-cash,
+.retail-summary-business {
+  display: grid;
+  gap: 14px;
+  align-items: stretch;
+}
+.retail-summary-cash {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+.retail-summary-business {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.retail-metric {
+  min-width: 0;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.retail-metric h4 {
+  margin: 0;
+  font-size: .9rem;
+  line-height: 1.4;
+}
+.retail-metric strong {
+  display: block;
+  font-size: clamp(1.15rem, 1.8vw, 1.7rem);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+.retail-metric p {
+  margin: auto 0 0;
+  color: var(--muted);
+  font-size: .8rem;
+  line-height: 1.5;
+}
+.retail-metric-main {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+.retail-metric-main p {
+  color: #e0f2f1;
+}
+.retail-summary-note {
+  margin: 10px 0 0;
+  line-height: 1.5;
+}
+@media (max-width: 1150px) {
+  .retail-summary-business {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 700px) {
+  .retail-summary-cash,
+  .retail-summary-business {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .retail-metric-main {
+    grid-column: 1 / -1;
+  }
+  .retail-metric {
+    padding: 16px;
+  }
+}
+@media (max-width: 380px) {
+  .retail-summary-cash,
+  .retail-summary-business {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
