@@ -59,10 +59,10 @@ export async function renderRetail(area, initialTab = null) {
       ${input(stationery ? 'Quanto pagou por esta compra? (MZN)' : 'Custo total desta produção ou compra (MZN)','entry_cost','number','min="0" step="0.01"')}
       <p>${stationery ? 'Indique o valor total pago pelos artigos desta entrada. O custo por artigo é calculado automaticamente.' : 'Indique quanto gastou para obter esta quantidade de produtos prontos.'}</p>
       ${stationery ? '' : `<details id="retail-cost-calculator"><summary>Preciso de ajuda para calcular o custo</summary><div class="form-grid">${input('Ingredientes ou compra dos produtos (MZN)','materials_cost','number','min="0" step="0.01" value="0"')}${input('Saquinhos / embalagens (MZN)','packaging_cost','number','min="0" step="0.01" value="0"')}${input('Energia e água (MZN)','energy_cost','number','min="0" step="0.01" value="0"')}${input('Mão de obra (MZN)','labor_cost','number','min="0" step="0.01" value="0"')}${input('Outros gastos (MZN)','other_cost','number','min="0" step="0.01" value="0"')}</div></details>`}
-      <output id="retail-cost-preview"></output></div><div id="retail-sale-fields" class="field full" hidden><div class="form-grid">${input('Cliente','customer')}${input('Preço unitário (MZN)','price','number','min="0" step="0.01"')}${input('Valor pago agora (MZN)','paid','number','min="0" step="0.01" value="0"')}<p>O valor restante permanece por receber.</p></div></div><details class="field full"><summary>Adicionar observações</summary><textarea name="notes" aria-label="Observações"></textarea></details><button id="retail-movement-submit" class="btn btn-primary" ${products.length?'':'disabled'}>Guardar movimento</button></form></div>
+      <output id="retail-cost-preview"></output></div><div id="retail-sale-fields" class="field full" hidden><div class="form-grid"><div class="field"><label>Método de pagamento<select name="payment_method" required><option value="cash">Dinheiro</option><option value="mpesa">M-Pesa</option><option value="emola">e-Mola</option><option value="bank_transfer">Transferência</option><option value="credit">A crédito — pagar depois</option></select></label></div><div class="field full"><output id="retail-sale-preview" aria-live="polite">Seleccione o produto e a quantidade.</output></div><div id="retail-credit-fields" class="field full" hidden>${input('Nome do cliente para a dívida','credit_customer')}</div><details id="retail-sale-options" class="field full"><summary>Cliente ou pagamento parcial</summary><div class="form-grid"><div class="field"><label>Cliente (opcional)<input name="customer"></label></div><div class="field"><label><input type="checkbox" name="partial_payment"> Receber apenas parte do valor</label></div><div id="retail-partial-fields" class="field" hidden><label>Valor recebido (MZN)<input type="number" name="paid" min="0.01" step="0.01"></label></div></div></details></div></div><details class="field full"><summary>Adicionar observações</summary><textarea name="notes" aria-label="Observações"></textarea></details><button id="retail-movement-submit" class="btn btn-primary" ${products.length?'':'disabled'}>Guardar movimento</button></form></div>
     ${products.some(p=>p.average_cost==null && Number(p.stock)>0) ? `<div class="card" id="retail-valuation-panel" hidden><h3>Indicar custo do stock antigo</h3><p>Indique o custo unitário real do stock existente para permitir novos movimentos. Os custos de vendas anteriores continuam desconhecidos.</p><form id="retail-valuation" class="form-grid"><div class="field"><label>Produto<select name="product_id" required>${products.filter(p=>p.average_cost==null && Number(p.stock)>0).map(p=>`<option value="${p.id}">${escape(p.name)}</option>`).join('')}</select></label></div>${input('Custo unitário do stock existente (MZN)','unit_cost','number','min="0" step="0.000001"')}<button class="btn btn-primary">Valorizar stock</button></form></div>` : ''}
     <div class="card" id="retail-payments-panel" hidden><h3>Receber dívida</h3><form id="retail-payment" class="form-grid"><div class="field"><label>Venda<select name="sale_id" required><option value="">Seleccionar dívida</option>${sales.filter(s=>Number(s.amount_paid)<Number(s.total_amount)).map(s=>`<option value="${s.id}">${escape(s.customer_name)} — ${escape(names.get(s.product_id))} — ${s.movement_date} — ${formatMoney(Number(s.total_amount)-Number(s.amount_paid))}</option>`).join('')}</select></label></div>${input('Data','date','date',`value="${today()}"`)}${input('Valor recebido (MZN)','amount','number','min="0.01" step="0.01"')}<button class="btn btn-primary">Registar pagamento</button></form></div>
-    <div class="card" id="retail-history-panel" hidden><h3>Histórico</h3><button type="button" class="btn btn-secondary" id="retail-record-loss">Registar perda / quebra</button><h4>Movimentos recentes</h3><div class="table-wrap"><table><thead><tr><th>Data</th><th>Produto</th><th>Tipo</th><th>Quantidade</th><th>Cliente</th><th>Total</th><th>Recebido</th><th>Por receber</th><th>Custo do movimento</th><th>Lucro bruto</th><th>Observações</th></tr></thead><tbody>${movements.slice(0,50).map(m=>`<tr><td>${escape(m.movement_date)}</td><td>${escape(names.get(m.product_id))}</td><td>${{entry:'Entrada',sale:'Venda',loss:'Perda'}[m.kind]}</td><td>${m.quantity}</td><td>${escape(m.customer_name||'-')}</td><td>${formatMoney(m.total_amount)}</td><td>${formatMoney(m.amount_paid)}</td><td>${formatMoney(Number(m.total_amount)-Number(m.amount_paid))}</td><td>${moneyOrUnknown(m.total_cost)}</td><td>${m.kind==='sale' && m.total_cost!=null ? formatMoney(Number(m.total_amount)-Number(m.total_cost)) : '-'}</td><td>${escape(m.notes||'-')}</td></tr>`).join('')||'<tr><td colspan="11">Sem movimentos.</td></tr>'}</tbody></table></div></div></div>`;
+    <div class="card" id="retail-history-panel" hidden><h3>Histórico</h3><button type="button" class="btn btn-secondary" id="retail-record-loss">Registar perda / quebra</button><h4>Movimentos recentes</h4><div class="table-wrap"><table><thead><tr><th>Data</th><th>Produto</th><th>Tipo</th><th>Quantidade</th><th>Cliente</th><th>Total</th><th>Recebido</th><th>Método</th><th>Por receber</th><th>Custo do movimento</th><th>Lucro bruto</th><th>Observações</th></tr></thead><tbody>${movements.slice(0,50).map(m=>`<tr><td>${escape(m.movement_date)}</td><td>${escape(names.get(m.product_id))}</td><td>${{entry:'Entrada',sale:'Venda',loss:'Perda'}[m.kind]}</td><td>${m.quantity}</td><td>${escape(m.customer_name||'-')}</td><td>${formatMoney(m.total_amount)}</td><td>${formatMoney(m.amount_paid)}</td><td>${escape(({cash:'Dinheiro',mpesa:'M-Pesa',emola:'e-Mola',bank_transfer:'Transferência',credit:'A crédito'})[m.payment_method] || '-')}</td><td>${formatMoney(Number(m.total_amount)-Number(m.amount_paid))}</td><td>${moneyOrUnknown(m.total_cost)}</td><td>${m.kind==='sale' && m.total_cost!=null ? formatMoney(Number(m.total_amount)-Number(m.total_cost)) : '-'}</td><td>${escape(m.notes||'-')}</td></tr>`).join('')||'<tr><td colspan="12">Sem movimentos.</td></tr>'}</tbody></table></div></div></div>`;
   const form=document.querySelector('#retail-movement');
   const costFields=stationery ? [] : ['materials_cost','packaging_cost','energy_cost','labor_cost','other_cost'];
   const calculator=document.querySelector('#retail-cost-calculator');
@@ -72,7 +72,30 @@ export async function renderRetail(area, initialTab = null) {
     const quantity=Number(form.elements.quantity.value||0);
     document.querySelector('#retail-cost-preview').textContent=`Custo por unidade: ${quantity>0?formatMoney(total/quantity):'indique a quantidade'}`;
   };
-  form.addEventListener('input',updateCost);
+  const updateSale=()=>{
+    const product=products.find(p=>p.id===form.elements.product_id.value);
+    const quantity=Number(form.elements.quantity.value||0);
+    const total=Math.round(Number(product?.unit_price||0)*quantity*100)/100;
+    const sale=form.elements.kind.value==='sale';
+    const credit=form.elements.payment_method.value==='credit';
+    const partial=form.elements.partial_payment.checked && !credit;
+    form.elements.payment_method.disabled=!sale;
+    form.elements.credit_customer.disabled=!sale || !credit;
+    document.querySelector('#retail-credit-fields').hidden=!credit;
+    document.querySelector('#retail-sale-options').hidden=credit;
+    form.elements.customer.disabled=!sale || credit;
+    form.elements.partial_payment.disabled=!sale || credit;
+    form.elements.customer.required=sale && partial;
+    form.elements.paid.disabled=!sale || !partial;
+    form.elements.paid.required=sale && partial;
+    form.elements.paid.max=String(total);
+    document.querySelector('#retail-partial-fields').hidden=!partial;
+    document.querySelector('#retail-sale-preview').textContent=product && quantity>0
+      ? `Preço: ${formatMoney(product.unit_price)} · Custo por unidade: ${moneyOrUnknown(product.average_cost)} · Total a ${credit?'receber':'pagar'}: ${formatMoney(total)}`
+      : 'Seleccione o produto e a quantidade.';
+  };
+  form.addEventListener('input',()=>{updateCost();updateSale();});
+  form.addEventListener('change',updateSale);
   calculator?.addEventListener('toggle',()=>{refreshFields();});
   const refreshFields=()=>{
     const sale=form.elements.kind.value==='sale';
@@ -83,8 +106,8 @@ export async function renderRetail(area, initialTab = null) {
     costFields.forEach(name=>{form.elements[name].disabled=!entry || !calculator?.open;});
     updateCost();
     document.querySelector('#retail-sale-fields').hidden=!sale;
-    ['customer','price','paid'].forEach(name=>{form.elements[name].disabled=!sale;});
-    form.elements.price.value=products.find(p=>p.id===form.elements.product_id.value)?.unit_price??'';
+    form.elements.date.closest('.field').hidden=sale;
+    updateSale();
   };
   const panels=['products','payments','history'];
   const openTab=tab=>{
@@ -112,11 +135,18 @@ export async function renderRetail(area, initialTab = null) {
   form.elements.product_id.addEventListener('change',refreshFields);
   openTab(initialTab || (products.length ? 'sale' : 'products'));
   bind('#retail-product',async fd=>supabase.from('retail_products').insert({area,name:String(fd.get('name')).trim(),unit_price:Number(fd.get('unit_price'))}),area);
-  bind('#retail-movement',async fd=>supabase.rpc('register_retail_movement',{
-    p_product:fd.get('product_id'),p_date:fd.get('date'),p_kind:fd.get('kind'),p_quantity:Number(fd.get('quantity')),
-    p_entry_cost:fd.get('kind')==='entry'?Number(fd.get('entry_cost')):null,
-    p_price:Number(fd.get('price')||0),p_paid:Number(fd.get('paid')||0),p_customer:fd.get('customer')||null,p_notes:[fd.get('notes'),fd.get('kind')==='entry' && calculator?.open?`Custos do lote (MZN): compra/ingredientes ${fd.get('materials_cost')}; embalagens ${fd.get('packaging_cost')}; energia/água ${fd.get('energy_cost')}; mão de obra ${fd.get('labor_cost')}; outros ${fd.get('other_cost')}.`:null].filter(Boolean).join('\n')||null,
-  }),area);
+  bind('#retail-movement',async fd=>{
+    if(fd.get('kind')==='sale') return supabase.rpc('register_retail_sale',{
+      p_product:fd.get('product_id'),p_quantity:Number(fd.get('quantity')),p_payment_method:fd.get('payment_method'),
+      p_customer:fd.get('payment_method')==='credit'?fd.get('credit_customer'):fd.get('customer')||null,
+      p_paid:fd.get('partial_payment')?Number(fd.get('paid')):null,p_date:today(),p_notes:fd.get('notes')||null,
+    });
+    return supabase.rpc('register_retail_movement',{
+      p_product:fd.get('product_id'),p_date:fd.get('date'),p_kind:fd.get('kind'),p_quantity:Number(fd.get('quantity')),
+      p_entry_cost:fd.get('kind')==='entry'?Number(fd.get('entry_cost')):null,
+      p_price:0,p_paid:0,p_customer:null,p_notes:[fd.get('notes'),fd.get('kind')==='entry' && calculator?.open?`Custos do lote (MZN): compra/ingredientes ${fd.get('materials_cost')}; embalagens ${fd.get('packaging_cost')}; energia/água ${fd.get('energy_cost')}; mão de obra ${fd.get('labor_cost')}; outros ${fd.get('other_cost')}.`:null].filter(Boolean).join('\n')||null,
+    });
+  },area);
   if(document.querySelector('#retail-valuation')) bind('#retail-valuation',async fd=>supabase.rpc('value_retail_stock',{p_product:fd.get('product_id'),p_unit_cost:Number(fd.get('unit_cost'))}),area);
   bind('#retail-payment',async fd=>supabase.rpc('register_retail_payment',{p_sale:fd.get('sale_id'),p_date:fd.get('date'),p_amount:Number(fd.get('amount'))}),area);
 }

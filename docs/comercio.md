@@ -44,3 +44,11 @@ O painel mostra custo dos produtos vendidos, lucro bruto sobre todas as vendas (
 Não se inventam custos de movimentos antigos: ficam como “Não informado” e os totais afectados são assinalados como parciais. Para produtos com stock anterior sem custo, o formulário “Valorizar stock antigo” permite indicar uma única vez o custo unitário do stock actual. Isto permite novos movimentos sem modificar o histórico de vendas.
 
 A interface mostra uma tarefa de cada vez: Vender, Registar compra/Adicionar stock, Produtos e stock, Receber dívida e Histórico e perdas. Começa na venda quando já existem produtos; sem produtos, começa no cadastro. As explicações de cálculo e observações ficam recolhidas até serem necessárias. Esta simplificação não exige nova migração SQL.
+
+## Venda com preço e custo automáticos
+
+Aplicar `supabase/20261019_venda_rapida_comercio.sql` depois das duas migrações anteriores. O registo normal de venda pede apenas produto, quantidade e método de pagamento (Dinheiro, M-Pesa, e-Mola ou Transferência). Preço e custo unitários aparecem automaticamente, com o total calculado. O servidor lê o preço declarado e o custo médio do produto no momento de guardar; não recebe preço nem custo editáveis do formulário de venda. A data é a data actual.
+
+A venda normal fica paga pelo total. “A crédito — pagar depois” exige o cliente e mantém o total em dívida. A opção recolhida “Cliente ou pagamento parcial” permite identificar o cliente ou indicar um recebimento parcial; se restar dívida, o cliente é obrigatório. O método escolhido é guardado na venda e no recebimento inicial. Pagamentos posteriores continuam pelo formulário Receber dívida.
+
+O custo continua a ser declarado nas compras/produção e calculado no stock; a venda reutiliza-o automaticamente. Registos antigos sem método de pagamento mantêm esse campo desconhecido.
